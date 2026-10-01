@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Liberte Tarefas</title>
+  <meta name="description" content="Tarefas e compromissos da Liberte, integrados ao Google Agenda.">
+  <meta name="theme-color" content="#5b2a4e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Tarefas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <div>
+        <h1>Liberte Tarefas</h1>
+        <button id="syncStatus" class="sync-status" type="button" hidden></button>
+      </div>
+    </div>
+    <button id="openSettings" class="icon-btn" type="button" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.43-2.53.04-.97-.04-.97 2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.68-.97l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.68.97l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64L4.57 11l-.04 1 .04.97-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.3.61.22l2.49-1c.51.39 1.07.72 1.68.97l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.68-.97l2.49 1c.22.08.48 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65Z"/></svg>
+    </button>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="tudo" aria-selected="true">Tudo</button>
+    <button role="tab" data-view="agenda">Agenda</button>
+    <button role="tab" data-view="pessoas">Pessoas</button>
+    <button role="tab" data-view="feitas">Feitas</button>
+  </nav>
+
+  <section class="filters">
+    <input id="search" type="search" placeholder="Buscar…" autocomplete="off">
+    <select id="filterPriority" aria-label="Filtrar por prioridade">
+      <option value="">Toda prioridade</option>
+      <option value="urgente">Urgente</option>
+      <option value="alta">Alta</option>
+      <option value="normal">Normal</option>
+      <option value="baixa">Baixa</option>
+    </select>
+    <select id="filterPerson" aria-label="Filtrar por responsável">
+      <option value="">Todos</option>
+    </select>
+  </section>
+
+  <main id="list" class="list" aria-live="polite"></main>
+
+  <footer class="capture">
+    <div id="preview" class="preview" hidden></div>
+    <form id="captureForm" class="capture-row" autocomplete="off">
+      <label class="icon-btn" aria-label="Foto">
+        <input id="photoInput" type="file" accept="image/*" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.17L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+      </label>
+      <textarea id="captureInput" rows="1" placeholder="Anote, fale ou fotografe…" enterkeyhint="send"></textarea>
+      <button id="micBtn" class="icon-btn" type="button" aria-label="Falar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+      </button>
+      <button class="icon-btn primary" type="submit" aria-label="Salvar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.2 15 12 3.39 13.8z"/></svg>
+      </button>
+    </form>
+  </footer>
+
+  <!-- Edição de tarefa -->
+  <dialog id="taskDialog" class="sheet">
+    <form id="taskForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong id="taskDialogTitle">Tarefa</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <label class="field">
+        <span>O que precisa ser feito</span>
+        <textarea name="title" rows="2" required></textarea>
+      </label>
+      <div class="seg" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="kind" value="tarefa"><span>Tarefa</span></label>
+        <label><input type="radio" name="kind" value="compromisso"><span>Compromisso</span></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Data</span><input type="date" name="date"></label>
+        <label class="field"><span>Hora</span><input type="time" name="time"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="deadline"> É um prazo final (entregar até essa data)</label>
+      <div class="field">
+        <span>Prioridade</span>
+        <div class="seg prio" role="radiogroup" aria-label="Prioridade">
+          <label><input type="radio" name="priority" value="urgente"><span>Urgente</span></label>
+          <label><input type="radio" name="priority" value="alta"><span>Alta</span></label>
+          <label><input type="radio" name="priority" value="normal"><span>Normal</span></label>
+          <label><input type="radio" name="priority" value="baixa"><span>Baixa</span></label>
+        </div>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Responsável</span><input name="assignee" list="peopleList" placeholder="Eu"></label>
+        <label class="field"><span>E-mail (convida na agenda)</span><input type="email" name="assigneeEmail" placeholder="opcional"></label>
+      </div>
+      <datalist id="peopleList"></datalist>
+      <label class="field">
+        <span>Lembretes</span>
+        <select name="reminders">
+          <option value="">Padrão</option>
+          <option value="0">Na hora</option>
+          <option value="10">10 min antes</option>
+          <option value="30">30 min antes</option>
+          <option value="60">1 hora antes</option>
+          <option value="0,1440">Na hora + 1 dia antes</option>
+          <option value="60,1440">1 hora antes + 1 dia antes</option>
+          <option value="1440,10080">1 dia antes + 1 semana antes</option>
+          <option value="none">Sem lembrete</option>
+        </select>
+      </label>
+      <label class="field"><span>Observações</span><textarea name="notes" rows="3"></textarea></label>
+      <div class="field">
+        <span>Anexos</span>
+        <div id="attachments" class="attachments"></div>
+        <div class="row">
+          <label class="btn ghost small"><input id="addPhoto" type="file" accept="image/*" hidden>+ Foto</label>
+          <button id="recordAudio" type="button" class="btn ghost small">● Gravar áudio</button>
+        </div>
+      </div>
+      <p id="calendarInfo" class="muted small"></p>
+      <div class="sheet-actions">
+        <button type="button" id="toggleDoneBtn" class="btn">Concluir</button>
+        <button type="button" id="deleteBtn" class="btn danger ghost">Excluir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ajustes -->
+  <dialog id="settingsDialog" class="sheet">
+    <form id="settingsForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong>Ajustes</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+
+      <h3>Google Agenda e Drive</h3>
+      <p id="googleState" class="muted small"></p>
+      <div class="row">
+        <button type="button" id="connectBtn" class="btn primary">Conectar Google</button>
+        <button type="button" id="syncBtn" class="btn ghost">Sincronizar agora</button>
+        <button type="button" id="disconnectBtn" class="btn ghost danger">Desconectar</button>
+      </div>
+      <label class="field">
+        <span>Agenda onde criar os eventos</span>
+        <select name="calendarId" id="calendarSelect"><option value="primary">Agenda principal</option></select>
+      </label>
+      <details>
+        <summary class="small">Configuração técnica (Client ID)</summary>
+        <label class="field">
+          <span>Google OAuth Client ID</span>
+          <input name="clientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off">
+        </label>
+        <p class="muted small">Veja o passo a passo no README do projeto.</p>
+      </details>
+
+      <h3>Lembretes</h3>
+      <div class="grid2">
+        <label class="field"><span>Horário padrão das tarefas</span><input type="time" name="defaultTaskTime"></label>
+        <label class="field"><span>Duração dos compromissos (min)</span><input type="number" min="5" step="5" name="appointmentMinutes"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="inviteAssignee"> Convidar o responsável no Google Agenda (quando tiver e-mail)</label>
+      <label class="check"><input type="checkbox" name="autoSaveDictation"> Salvar automaticamente quando terminar de falar</label>
+      <div class="row">
+        <button type="button" id="notifyBtn" class="btn ghost">Ativar notificações neste aparelho</button>
+        <button type="button" id="dailyReviewBtn" class="btn ghost">Criar revisão diária na agenda</button>
+      </div>
+
+      <h3>Pessoas</h3>
+      <p class="muted small">Responsáveis com e-mail recebem convite na agenda. Use <b>@Nome</b> ao digitar.</p>
+      <div id="peopleEditor" class="people"></div>
+      <button type="button" id="addPerson" class="btn ghost small">+ Pessoa</button>
+
+      <h3>Segurança dos dados</h3>
+      <div class="row">
+        <button type="button" id="exportBtn" class="btn ghost">Baixar backup</button>
+        <label class="btn ghost"><input id="importInput" type="file" accept="application/json" hidden>Restaurar backup</label>
+      </div>
+      <p class="muted small">Dica: digite “reunião com Ana sexta às 15h urgente @Ana”. O app entende data, hora, prioridade e responsável.</p>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="recording" class="recording" hidden>
+    <span class="dot"></span><span id="recordingLabel">Ouvindo…</span>
+    <button type="button" id="stopRecording" class="btn small">Parar</button>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
