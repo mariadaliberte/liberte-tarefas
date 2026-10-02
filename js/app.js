@@ -364,10 +364,10 @@ $('#captureForm').addEventListener('submit', (e) => { e.preventDefault(); submit
 
 // ---------- Foto ----------
 
-async function compressImage(file) {
+async function compressImage(file, maxSide = 1600) {
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(bitmap.width * scale);
     canvas.height = Math.round(bitmap.height * scale);
@@ -901,6 +901,7 @@ const notebook = initNotebook({
   $, esc, parseInput, createFromText, makeAttachment, openTask, toast, dateLabel, stamp,
   createTask: (data) => { const t = store.createTask(data); sync.scheduleSync(); return t; },
   PRIORITIES: store.PRIORITIES,
+  compressImage, putFile: store.putFile, getFile: store.getFile, removeFile: store.removeFile,
 });
 
 // ---------- Inicialização ----------

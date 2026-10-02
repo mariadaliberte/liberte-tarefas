@@ -24,6 +24,7 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
 - **Caderno (tablet com caneta):** aba “Caderno” com folha pautada.
   - *Escrever:* escreva à mão, uma tarefa por linha; o tablet converte sua letra em texto (Scribble no iPad com Apple Pencil; S Pen ou teclado com escrita à mão no Android). O app mostra ao lado como cada linha vai virar tarefa (data, prioridade, responsável) e salva todas de uma vez. O rascunho fica guardado se você sair.
   - *Desenhar:* rascunho livre (setas, esquemas). A folha vira imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada na tela é ignorada.
+  - *Minha folha:* envie uma vez o modelo da sua folha de gestão (imagem ou PDF). Ele fica salvo no aparelho e vira o fundo onde você escreve com a caneta; a borracha apaga só a tinta, nunca o modelo. Ao salvar, a página preenchida vira tarefa com a imagem anexada. Também dá para enviar páginas já preenchidas em outro app (ex.: Samsung Notes exportado em PDF ou imagem): cada página do PDF vira uma imagem na tarefa.
 - **Revisão diária:** em Ajustes, cria um lembrete recorrente (seg a sex) para revisar as tarefas sem data.
 - **Nada se perde:** tudo é salvo no aparelho na hora, inclusive sem internet, e copiado para o seu Google Drive (pasta oculta do app + pasta “Liberte Tarefas - Anexos” para fotos e áudios). Abre no celular e no computador com os mesmos dados.
 - **Compartilhar para o app (Android):** no WhatsApp, segure a mensagem → Compartilhar → Tarefas.

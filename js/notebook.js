@@ -2,12 +2,55 @@
 // - Escrever: folha pautada; a caneta escreve e o tablet converte em texto
 //   (Scribble no iPad, S Pen / teclado de escrita à mão no Android). Cada linha vira uma tarefa.
 // - Desenhar: rascunho à mão livre, salvo como imagem anexada a uma tarefa.
+// - Minha folha: o modelo de folha da própria usuária (imagem ou PDF) vira o fundo
+//   onde ela escreve; também aceita enviar uma página já preenchida em outro app.
 
 const DRAFT_KEY = 'lt.notebook.draft';
 const LINE = 40; // altura da pauta, em px (igual ao CSS)
+const TEMPLATE_ID = 'nb-template';
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error('Não foi possível carregar o leitor de PDF. Verifique a internet.'));
+    document.head.appendChild(el);
+  });
+}
+
+// Converte cada página de um PDF em imagem (o worker roda na própria página).
+async function pdfToImages(file, maxPages = 20) {
+  await loadScript(`${PDFJS}pdf.min.js`);
+  await loadScript(`${PDFJS}pdf.worker.min.js`);
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS}pdf.worker.min.js`;
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const blobs = [];
+  for (let n = 1; n <= Math.min(pdf.numPages, maxPages); n++) {
+    const page = await pdf.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(3, 1800 / base.width) });
+    const c = document.createElement('canvas');
+    c.width = Math.round(viewport.width);
+    c.height = Math.round(viewport.height);
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: g, viewport }).promise;
+    blobs.push(await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88)));
+  }
+  return blobs;
+}
+
+const isPdf = (file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
 export function initNotebook(deps) {
-  const { $, esc, parseInput, createFromText, makeAttachment, createTask, openTask, toast, dateLabel, stamp, PRIORITIES } = deps;
+  const {
+    $, esc, parseInput, createFromText, makeAttachment, createTask, openTask, toast, dateLabel, stamp, PRIORITIES,
+    compressImage, putFile, getFile, removeFile,
+  } = deps;
 
   const root = $('#notebook');
   const text = $('#nbText');
@@ -21,13 +64,11 @@ export function initNotebook(deps) {
   const label = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
   $('#nbDate').textContent = label.charAt(0).toUpperCase() + label.slice(1);
 
-  // ---------- Alternar Escrever / Desenhar ----------
+  // ---------- Alternar Escrever / Desenhar / Minha folha ----------
+  let mode = 'escrever';
   for (const input of root.querySelectorAll('input[name="nbMode"]')) {
     input.addEventListener('change', () => {
-      const draw = input.value === 'desenhar' && input.checked;
-      $('#nbWrite').hidden = draw;
-      $('#nbDraw').hidden = !draw;
-      if (draw) resizeCanvas();
+      if (input.checked) setMode(input.value);
     });
   }
 
@@ -66,58 +107,91 @@ export function initNotebook(deps) {
   $('#nbClear').addEventListener('click', () => { text.value = ''; updatePreview(); text.focus(); });
   updatePreview();
 
-  // ---------- Desenhar ----------
-  const strokes = [];
+  // ---------- Desenhar e Minha folha ----------
+  // Pontos guardados em proporção da largura da folha: o traço acompanha
+  // a folha quando a tela gira ou muda de tamanho.
+  const strokesBy = { desenhar: [], folha: [] };
+  const strokes = () => strokesBy[mode] || [];
+  const wrap = $('#nbCanvasWrap');
+  const templateImg = $('#nbTemplate');
+  let template = null; // { url, w, h }
   let current = null;
   let tool = 'caneta';
   let penSeen = false;
   let cssW = 0;
   let cssH = 0;
+  let extraLines = 0;
 
   function css(name) {
     return getComputedStyle(root).getPropertyValue(name).trim();
   }
 
+  function setMode(next) {
+    mode = next;
+    const drawing = mode !== 'escrever';
+    $('#nbWrite').hidden = drawing;
+    $('#nbDraw').hidden = !drawing;
+    $('#nbDrawHint').hidden = mode !== 'desenhar';
+    $('#nbFolhaHint').hidden = mode !== 'folha';
+    $('#nbMore').hidden = mode !== 'desenhar';
+    $('#nbFolhaBar').hidden = mode !== 'folha' || !template;
+    const empty = mode === 'folha' && !template;
+    $('#nbFolhaEmpty').hidden = !empty;
+    $('#nbDrawArea').hidden = empty;
+    if (drawing && !empty) requestAnimationFrame(resizeCanvas);
+  }
+
   function resizeCanvas() {
-    const box = canvas.parentElement.getBoundingClientRect();
-    cssW = Math.floor(box.width);
-    cssH = Math.max(cssH, Math.floor(Math.max(480, window.innerHeight * 0.62)));
+    const onTemplate = mode === 'folha' && template;
+    wrap.classList.toggle('on-template', !!onTemplate);
+    templateImg.hidden = !onTemplate;
+    cssW = Math.floor(wrap.getBoundingClientRect().width);
+    if (!cssW) return;
+    cssH = onTemplate
+      ? Math.round(cssW * (template.h / template.w))
+      : Math.floor(Math.max(480, window.innerHeight * 0.62)) + extraLines * LINE;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = cssW * dpr;
     canvas.height = cssH * dpr;
     canvas.style.height = `${cssH}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    redraw(ctx);
+    redraw(ctx, cssW, cssH);
   }
 
-  function segment(c, s, a, b) {
+  // Desenha um trecho; W é a largura (em px lógicos) da folha de destino.
+  function segment(c, s, a, b, W) {
     c.save();
-    if (s.erase) c.globalCompositeOperation = c === ctx ? 'destination-out' : 'source-over';
+    c.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
     c.lineCap = 'round';
     c.lineJoin = 'round';
     c.strokeStyle = c === ctx ? s.color : s.exportColor;
-    c.lineWidth = s.erase ? s.width : s.width * (0.45 + (a.p + b.p) / 2);
+    const w = s.width * W;
+    c.lineWidth = s.erase ? w : w * (0.45 + (a.p + b.p) / 2);
     c.beginPath();
-    c.moveTo(a.x, a.y);
-    c.lineTo(b.x, b.y);
+    c.moveTo(a.x * W, a.y * W);
+    c.lineTo(b.x * W, b.y * W);
     c.stroke();
     c.restore();
   }
 
-  function drawStroke(c, s) {
+  function drawStroke(c, s, W) {
     const pts = s.points;
-    if (pts.length === 1) segment(c, s, pts[0], { ...pts[0], x: pts[0].x + 0.1 });
-    for (let i = 1; i < pts.length; i++) segment(c, s, pts[i - 1], pts[i]);
+    if (pts.length === 1) segment(c, s, pts[0], { ...pts[0], x: pts[0].x + 0.0002 }, W);
+    for (let i = 1; i < pts.length; i++) segment(c, s, pts[i - 1], pts[i], W);
   }
 
-  function redraw(c) {
-    if (c === ctx) c.clearRect(0, 0, cssW, cssH);
-    for (const s of strokes) drawStroke(c, s);
+  function redraw(c, W, H) {
+    c.clearRect(0, 0, W, H);
+    for (const s of strokes()) drawStroke(c, s, W);
   }
 
   function point(e) {
     const r = canvas.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure && e.pointerType === 'pen' ? e.pressure : 0.5 };
+    return {
+      x: (e.clientX - r.left) / cssW,
+      y: (e.clientY - r.top) / cssW,
+      p: e.pressure && e.pointerType === 'pen' ? e.pressure : 0.5,
+    };
   }
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -126,15 +200,16 @@ export function initNotebook(deps) {
     if (penSeen && e.pointerType === 'touch') return;
     canvas.setPointerCapture(e.pointerId);
     const erase = tool === 'borracha' || e.button === 5 || (e.buttons & 32);
+    const onTemplate = mode === 'folha';
     current = {
       erase,
-      color: css('--text'),
-      exportColor: erase ? '#ffffff' : '#1f1a1d',
-      width: erase ? 22 : 2.6,
+      color: onTemplate ? '#1d3f8a' : css('--text'),
+      exportColor: onTemplate ? '#1d3f8a' : '#1f1a1d',
+      width: (erase ? 22 : 2.6) / cssW,
       points: [point(e)],
     };
-    strokes.push(current);
-    drawStroke(ctx, current);
+    strokes().push(current);
+    drawStroke(ctx, current, cssW);
     e.preventDefault();
   });
 
@@ -145,7 +220,7 @@ export function initNotebook(deps) {
       const prev = current.points[current.points.length - 1];
       const next = point(ev);
       current.points.push(next);
-      segment(ctx, current, prev, next);
+      segment(ctx, current, prev, next, cssW);
     }
     e.preventDefault();
   });
@@ -160,42 +235,63 @@ export function initNotebook(deps) {
       root.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
     });
   }
-  $('#nbUndo').addEventListener('click', () => { strokes.pop(); redraw(ctx); });
-  $('#nbWipe').addEventListener('click', () => { strokes.length = 0; redraw(ctx); });
-  $('#nbMore').addEventListener('click', () => {
-    cssH += LINE * 8;
-    const saved = strokes.slice();
-    resizeCanvas();
-    strokes.splice(0, strokes.length, ...saved);
-    redraw(ctx);
-  });
+  $('#nbUndo').addEventListener('click', () => { strokes().pop(); redraw(ctx, cssW, cssH); });
+  $('#nbWipe').addEventListener('click', () => { strokes().length = 0; redraw(ctx, cssW, cssH); });
+  $('#nbMore').addEventListener('click', () => { extraLines += 8; resizeCanvas(); });
 
-  // Recorta a folha até a área usada para a imagem ficar leve e legível.
-  function exportBlob() {
-    const ink = strokes.filter((s) => !s.erase);
-    if (!ink.length) return Promise.resolve(null);
-    let maxY = 0;
-    for (const s of ink) for (const p of s.points) maxY = Math.max(maxY, p.y);
-    const h = Math.min(cssH, Math.ceil((maxY + LINE) / LINE) * LINE);
-    const scale = 2;
-    const out = document.createElement('canvas');
-    out.width = cssW * scale;
-    out.height = h * scale;
-    const oc = out.getContext('2d');
-    oc.scale(scale, scale);
-    oc.fillStyle = '#ffffff';
-    oc.fillRect(0, 0, cssW, h);
-    // Pauta clara na imagem final, como no caderno.
-    oc.strokeStyle = '#dfe6ee';
-    oc.lineWidth = 1;
-    for (let y = LINE; y < h; y += LINE) {
-      oc.beginPath();
-      oc.moveTo(0, y + 0.5);
-      oc.lineTo(cssW, y + 0.5);
-      oc.stroke();
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  // Monta a imagem final: fundo (pauta ou modelo) + tinta numa camada própria,
+  // para a borracha apagar só a tinta e nunca o modelo.
+  async function exportBlob() {
+    const ink = strokes().filter((s) => !s.erase);
+    if (!ink.length) return null;
+    let W;
+    let H;
+    let background;
+    if (mode === 'folha' && template) {
+      const img = await loadImage(template.url);
+      W = Math.min(2000, template.w);
+      H = Math.round(W * (template.h / template.w));
+      background = (g) => g.drawImage(img, 0, 0, W, H);
+    } else {
+      W = cssW * 2;
+      let maxY = 0;
+      for (const s of ink) for (const p of s.points) maxY = Math.max(maxY, p.y * cssW);
+      H = Math.min(cssH, Math.ceil((maxY + LINE) / LINE) * LINE) * 2;
+      background = (g) => {
+        g.fillStyle = '#ffffff';
+        g.fillRect(0, 0, W, H);
+        g.strokeStyle = '#dfe6ee';
+        g.lineWidth = 2;
+        for (let y = LINE * 2; y < H; y += LINE * 2) {
+          g.beginPath();
+          g.moveTo(0, y + 0.5);
+          g.lineTo(W, y + 0.5);
+          g.stroke();
+        }
+      };
     }
-    redraw(oc);
-    return new Promise((resolve) => out.toBlob(resolve, 'image/jpeg', 0.85));
+    const out = document.createElement('canvas');
+    out.width = W;
+    out.height = H;
+    const oc = out.getContext('2d');
+    oc.fillStyle = '#ffffff';
+    oc.fillRect(0, 0, W, H);
+    background(oc);
+    const layer = document.createElement('canvas');
+    layer.width = W;
+    layer.height = H;
+    redraw(layer.getContext('2d'), W, H);
+    oc.drawImage(layer, 0, 0);
+    return new Promise((resolve) => out.toBlob(resolve, 'image/jpeg', 0.88));
   }
 
   $('#nbSaveDrawing').addEventListener('click', async () => {
@@ -203,14 +299,80 @@ export function initNotebook(deps) {
     if (!blob) return toast('A folha está em branco.');
     const att = await makeAttachment(blob, 'image');
     const typed = $('#nbDrawTitle').value.trim();
+    const label = mode === 'folha' ? 'Folha de gestão' : 'Anotação à mão';
     const task = typed
       ? createFromText(typed, { attachments: [att], source: 'caderno' })
-      : createTask({ title: `Anotação à mão de ${stamp()}`, attachments: [att], source: 'caderno' });
-    strokes.length = 0;
-    redraw(ctx);
+      : createTask({ title: `${label} de ${stamp()}`, attachments: [att], source: 'caderno' });
+    strokes().length = 0;
+    redraw(ctx, cssW, cssH);
     $('#nbDrawTitle').value = '';
     openTask(task.id, { focusTitle: !typed });
   });
+
+  // ---------- Modelo da folha ----------
+  async function showTemplate(blob) {
+    if (template?.url) URL.revokeObjectURL(template.url);
+    if (!blob) { template = null; templateImg.removeAttribute('src'); return; }
+    const url = URL.createObjectURL(blob);
+    const img = await loadImage(url);
+    template = { url, w: img.naturalWidth, h: img.naturalHeight };
+    templateImg.src = url;
+  }
+
+  async function fileToImages(file) {
+    if (isPdf(file)) return pdfToImages(file);
+    return [await compressImage(file, 2000)];
+  }
+
+  async function chooseTemplate(e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      toast('Preparando sua folha…');
+      const [blob] = await fileToImages(file);
+      await putFile(TEMPLATE_ID, blob);
+      await showTemplate(blob);
+      strokesBy.folha.length = 0;
+      setMode('folha');
+      toast('Modelo salvo neste aparelho. Escreva por cima com a caneta.');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Não consegui abrir esse arquivo. Use imagem (JPG/PNG) ou PDF.');
+    }
+  }
+  $('#nbTemplateInput').addEventListener('change', chooseTemplate);
+  $('#nbTemplateInput2').addEventListener('change', chooseTemplate);
+  $('#nbRemoveTemplate').addEventListener('click', async () => {
+    await removeFile(TEMPLATE_ID).catch(() => {});
+    await showTemplate(null);
+    strokesBy.folha.length = 0;
+    setMode('folha');
+  });
+
+  // ---------- Página já preenchida em outro app ----------
+  async function uploadFilledPages(e) {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (!files.length) return;
+    try {
+      toast('Anexando…');
+      const attachments = [];
+      for (const file of files) {
+        for (const blob of await fileToImages(file)) attachments.push(await makeAttachment(blob, 'image'));
+      }
+      const pages = attachments.length > 1 ? ` (${attachments.length} páginas)` : '';
+      const task = createTask({ title: `Folha de gestão de ${stamp()}${pages}`, attachments, source: 'caderno' });
+      openTask(task.id, { focusTitle: true });
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Não consegui abrir esse arquivo. Use imagem (JPG/PNG) ou PDF.');
+    }
+  }
+  $('#nbPageInput').addEventListener('change', uploadFilledPages);
+  $('#nbPageInput2').addEventListener('change', uploadFilledPages);
+
+  getFile(TEMPLATE_ID).then((blob) => blob && showTemplate(blob)).catch(() => {});
 
   window.addEventListener('resize', () => { if (!$('#nbDraw').hidden) resizeCanvas(); });
 

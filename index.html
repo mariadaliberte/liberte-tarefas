@@ -62,6 +62,7 @@
       <div class="seg nb-mode" role="radiogroup" aria-label="Modo do caderno">
         <label><input type="radio" name="nbMode" value="escrever" checked><span>Escrever</span></label>
         <label><input type="radio" name="nbMode" value="desenhar"><span>Desenhar</span></label>
+        <label><input type="radio" name="nbMode" value="folha"><span>Minha folha</span></label>
       </div>
     </div>
 
@@ -81,18 +82,41 @@
     </div>
 
     <div id="nbDraw" hidden>
-      <p class="muted small nb-hint">Rascunhe à mão livre. A folha é salva como imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada é ignorada.</p>
-      <div class="nb-tools row">
-        <button type="button" class="btn small" data-tool="caneta" aria-pressed="true">Caneta</button>
-        <button type="button" class="btn small" data-tool="borracha" aria-pressed="false">Borracha</button>
-        <button type="button" id="nbUndo" class="btn small ghost">Desfazer</button>
-        <button type="button" id="nbWipe" class="btn small ghost">Apagar tudo</button>
-        <button type="button" id="nbMore" class="btn small ghost">+ Linhas</button>
+      <p id="nbDrawHint" class="muted small nb-hint">Rascunhe à mão livre. A folha é salva como imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada é ignorada.</p>
+      <p id="nbFolhaHint" class="muted small nb-hint" hidden>Escreva por cima da sua folha com a caneta. Ao salvar, a página preenchida vira uma tarefa com a imagem anexada.</p>
+
+      <div id="nbFolhaEmpty" class="nb-empty" hidden>
+        <p class="nb-eyebrow">Sua folha de gestão</p>
+        <h3>Use o modelo de folha que você já usa</h3>
+        <p class="muted">Envie uma vez o arquivo da sua folha em branco (foto, imagem ou PDF). Ele fica salvo neste aparelho e vira o fundo onde você escreve com a caneta.</p>
+        <div class="row">
+          <label class="btn primary"><input id="nbTemplateInput" type="file" accept="image/*,application/pdf" hidden>Enviar modelo da folha</label>
+          <label class="btn ghost"><input id="nbPageInput" type="file" accept="image/*,application/pdf" multiple hidden>Enviar página já preenchida</label>
+        </div>
+        <p class="muted small">Preencheu no Samsung Notes ou em outro app? Exporte como imagem ou PDF e use “Enviar página já preenchida”.</p>
       </div>
-      <div class="nb-canvas-wrap"><canvas id="nbCanvas" class="paper-canvas"></canvas></div>
-      <div class="row nb-save-row">
-        <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
-        <button type="button" id="nbSaveDrawing" class="btn primary">Salvar como tarefa</button>
+
+      <div id="nbDrawArea">
+        <div class="nb-tools row">
+          <button type="button" class="btn small" data-tool="caneta" aria-pressed="true">Caneta</button>
+          <button type="button" class="btn small" data-tool="borracha" aria-pressed="false">Borracha</button>
+          <button type="button" id="nbUndo" class="btn small ghost">Desfazer</button>
+          <button type="button" id="nbWipe" class="btn small ghost">Apagar tudo</button>
+          <button type="button" id="nbMore" class="btn small ghost">+ Linhas</button>
+          <span id="nbFolhaBar" class="row nb-folha-bar" hidden>
+            <label class="btn small ghost"><input id="nbTemplateInput2" type="file" accept="image/*,application/pdf" hidden>Trocar modelo</label>
+            <label class="btn small ghost"><input id="nbPageInput2" type="file" accept="image/*,application/pdf" multiple hidden>Enviar página pronta</label>
+            <button type="button" id="nbRemoveTemplate" class="btn small ghost danger">Remover modelo</button>
+          </span>
+        </div>
+        <div id="nbCanvasWrap" class="nb-canvas-wrap">
+          <img id="nbTemplate" alt="" hidden>
+          <canvas id="nbCanvas" class="paper-canvas"></canvas>
+        </div>
+        <div class="row nb-save-row">
+          <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
+          <button type="button" id="nbSaveDrawing" class="btn primary">Salvar como tarefa</button>
+        </div>
       </div>
     </div>
   </section>
