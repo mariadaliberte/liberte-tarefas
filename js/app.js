@@ -55,6 +55,17 @@ function toast(msg, { action, ms = 3500 } = {}) {
   toast.t = setTimeout(() => { el.hidden = true; }, ms);
 }
 
+// Confirmação dentro do app (no lugar da janela padrão do navegador).
+function ask(message, okLabel = 'Confirmar') {
+  const dlg = $('#confirmDialog');
+  $('#confirmText').textContent = message;
+  $('#confirmOk').textContent = okLabel;
+  dlg.showModal();
+  return new Promise((resolve) => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
+  });
+}
+
 function sortTasks(a, b) {
   const pr = (store.PRIORITIES[a.priority]?.rank ?? 2) - (store.PRIORITIES[b.priority]?.rank ?? 2);
   if (a.date !== b.date) return (a.date || '9999') < (b.date || '9999') ? -1 : 1;
@@ -484,7 +495,7 @@ async function renderAttachments(task) {
     rm.textContent = '✕';
     rm.setAttribute('aria-label', 'Remover anexo');
     rm.onclick = async () => {
-      if (!confirm('Remover este anexo?')) return;
+      if (!(await ask('Remover este anexo?', 'Remover'))) return;
       const t = store.updateTask(task.id, { attachments: task.attachments.filter((a) => a.id !== att.id) });
       await store.removeFile(att.id).catch(() => {});
       sync.scheduleSync();
@@ -561,7 +572,7 @@ $('#toggleDoneBtn').addEventListener('click', () => {
 });
 
 $('#deleteBtn').addEventListener('click', async () => {
-  if (!confirm('Excluir esta tarefa? Ela também sai do Google Agenda.')) return;
+  if (!(await ask('Excluir esta tarefa? Ela também sai do Google Agenda.', 'Excluir'))) return;
   const t = store.getTask(state.editingId);
   store.deleteTask(state.editingId);
   for (const a of t.attachments || []) store.removeFile(a.id).catch(() => {});
@@ -735,8 +746,8 @@ async function connectGoogle({ silent = false } = {}) {
 
 $('#connectBtn').addEventListener('click', () => connectGoogle());
 $('#syncBtn').addEventListener('click', async () => { await sync.syncNow(); refreshGoogleState(); loadAgenda(true); });
-$('#disconnectBtn').addEventListener('click', () => {
-  if (!confirm('Desconectar o Google neste aparelho? Suas tarefas continuam salvas aqui e no Drive.')) return;
+$('#disconnectBtn').addEventListener('click', async () => {
+  if (!(await ask('Desconectar o Google neste aparelho? Suas tarefas continuam salvas aqui e no Drive.', 'Desconectar'))) return;
   g.disconnect();
   refreshGoogleState();
   render();
@@ -750,8 +761,7 @@ $('#syncStatus').addEventListener('click', () => {
 
 $('#dailyReviewBtn').addEventListener('click', async () => {
   if (!g.hasValidToken()) return toast('Conecte o Google primeiro.');
-  const time = prompt('Horário da revisão diária (seg a sex):', '08:30');
-  if (!time || !/^\d{1,2}:\d{2}$/.test(time)) return;
+  const time = $('#dailyReviewTime').value || '08:30';
   const [h, m] = time.split(':').map(Number);
   const start = new Date();
   start.setDate(start.getDate() + 1);

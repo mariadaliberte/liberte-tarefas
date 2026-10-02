@@ -173,7 +173,10 @@
       <label class="check"><input type="checkbox" name="autoSaveDictation"> Salvar automaticamente quando terminar de falar</label>
       <div class="row">
         <button type="button" id="notifyBtn" class="btn ghost">Ativar notificações neste aparelho</button>
-        <button type="button" id="dailyReviewBtn" class="btn ghost">Criar revisão diária na agenda</button>
+      </div>
+      <div class="row">
+        <label class="field inline"><span>Revisão diária (seg a sex)</span><input type="time" id="dailyReviewTime" value="08:30"></label>
+        <button type="button" id="dailyReviewBtn" class="btn ghost">Criar na agenda</button>
       </div>
 
       <h3>Pessoas</h3>
@@ -187,6 +190,16 @@
         <label class="btn ghost"><input id="importInput" type="file" accept="application/json" hidden>Restaurar backup</label>
       </div>
       <p class="muted small">Dica: digite “reunião com Ana sexta às 15h urgente @Ana”. O app entende data, hora, prioridade e responsável.</p>
+    </form>
+  </dialog>
+
+ <dialog id="confirmDialog" class="confirm">
+    <form method="dialog">
+      <p id="confirmText"></p>
+      <div class="row end">
+        <button value="cancel" class="btn ghost">Cancelar</button>
+        <button value="ok" id="confirmOk" class="btn danger">Confirmar</button>
+      </div>
     </form>
   </dialog>
 
