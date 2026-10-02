@@ -3,6 +3,7 @@ import * as g from './google.js';
 import * as sync from './sync.js';
 import { parseTask, formatDate } from './parser.js';
 import { CONFIG } from './config.js';
+import { initNotebook } from './notebook.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -108,6 +109,31 @@ async function fileUrl(att) {
   return url;
 }
 
+const SOURCE_LABEL = { texto: 'digitada', voz: 'por voz', foto: 'por foto', audio: 'por áudio', caderno: 'no caderno' };
+
+function daysSince(iso) {
+  const a = new Date(iso);
+  const start = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((today - start) / 86_400_000);
+}
+
+function shortDate(iso) {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function createdChip(t) {
+  if (t.status === 'feita' && t.doneAt) {
+    return `<span class="chip age">criada ${shortDate(t.createdAt)} · feita ${shortDate(t.doneAt)}</span>`;
+  }
+  const days = daysSince(t.createdAt);
+  const label = days === 0 ? 'criada hoje' : days === 1 ? 'criada ontem' : `criada ${shortDate(t.createdAt)}`;
+  const stale = days >= 7 ? ` · há ${days} dias` : '';
+  return `<span class="chip age${stale ? ' stale' : ''}" title="Data de criação">${label}${stale}</span>`;
+}
+
 function taskCard(t) {
   const today = todayStr();
   const chips = [];
@@ -127,6 +153,7 @@ function taskCard(t) {
   if (imgs.length > 1) chips.push(`<span class="chip">📷 ${imgs.length}</span>`);
   if (t.notes) chips.push('<span class="chip">📝</span>');
   if (t.calendar?.eventId) chips.push('<span class="chip" title="No Google Agenda">✓ agenda</span>');
+  chips.push(createdChip(t));
 
   return `
     <article class="card ${t.status === 'feita' ? 'done' : ''}" data-id="${t.id}" data-priority="${t.priority}">
@@ -231,6 +258,13 @@ function renderFeitas(all) {
 }
 
 function render() {
+  const notebookOpen = state.view === 'caderno';
+  document.body.classList.toggle('notebook-open', notebookOpen);
+  $('#notebook').hidden = !notebookOpen;
+  if (notebookOpen) {
+    notebook?.show();
+    return;
+  }
   const all = store.allTasks().filter(matchesFilters);
   const open = all.filter((t) => t.status !== 'feita');
   const views = { tudo: renderTudo, agenda: renderAgenda, pessoas: renderPessoas };
@@ -524,6 +558,8 @@ function openTask(id, { focusTitle = false } = {}) {
   f.notes.value = t.notes || '';
   $('#taskDialogTitle').textContent = t.kind === 'compromisso' ? 'Compromisso' : 'Tarefa';
   $('#toggleDoneBtn').textContent = t.status === 'feita' ? 'Reabrir' : 'Concluir ✓';
+  const created = new Date(t.createdAt);
+  $('#createdInfo').textContent = `Criada em ${created.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} às ${created.toTimeString().slice(0, 5)}${SOURCE_LABEL[t.source] ? ` · ${SOURCE_LABEL[t.source]}` : ''}${t.doneAt && t.status === 'feita' ? ` · concluída em ${new Date(t.doneAt).toLocaleDateString('pt-BR')}` : ''}`;
   const info = $('#calendarInfo');
   if (t.calendar?.link) info.innerHTML = `No Google Agenda · <a href="${esc(t.calendar.link)}" target="_blank" rel="noopener">abrir evento</a>`;
   else if (t.date && g.isConnected()) info.textContent = 'Será enviado ao Google Agenda na próxima sincronização.';
@@ -858,6 +894,14 @@ function checkLocalReminders() {
   for (const [k, v] of Object.entries(fired)) if (now - v > 3 * 86_400_000) delete fired[k];
   localStorage.setItem(FIRED_KEY, JSON.stringify(fired));
 }
+
+// ---------- Caderno ----------
+
+const notebook = initNotebook({
+  $, esc, parseInput, createFromText, makeAttachment, openTask, toast, dateLabel, stamp,
+  createTask: (data) => { const t = store.createTask(data); sync.scheduleSync(); return t; },
+  PRIORITIES: store.PRIORITIES,
+});
 
 // ---------- Inicialização ----------
 

@@ -51,6 +51,11 @@ test('responsável com e-mail é convidado; tarefa feita fica sem lembretes', ()
   assert.deepEqual(ev.reminders.overrides, []);
 });
 
+test('descrição do evento traz a data de criação', () => {
+  const ev = buildEvent({ ...base, createdAt: new Date(2026, 9, 1, 14, 5).toISOString() }, settings);
+  assert.match(ev.description, /Criada em: 01\/10\/2026 às 14:05/);
+});
+
 test('hash muda quando a tarefa muda', () => {
   assert.notEqual(eventHash(buildEvent(base, settings)), eventHash(buildEvent({ ...base, title: 'X' }, settings)));
 });

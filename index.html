@@ -34,6 +34,7 @@
     <button role="tab" data-view="agenda">Agenda</button>
     <button role="tab" data-view="pessoas">Pessoas</button>
     <button role="tab" data-view="feitas">Feitas</button>
+    <button role="tab" data-view="caderno">✍︎ Caderno</button>
   </nav>
 
   <section class="filters">
@@ -51,6 +52,50 @@
   </section>
 
   <main id="list" class="list" aria-live="polite"></main>
+
+  <section id="notebook" class="notebook" hidden aria-label="Caderno">
+    <div class="nb-head">
+      <div>
+        <p class="nb-eyebrow">Caderno</p>
+        <h2 id="nbDate"></h2>
+      </div>
+      <div class="seg nb-mode" role="radiogroup" aria-label="Modo do caderno">
+        <label><input type="radio" name="nbMode" value="escrever" checked><span>Escrever</span></label>
+        <label><input type="radio" name="nbMode" value="desenhar"><span>Desenhar</span></label>
+      </div>
+    </div>
+
+    <div id="nbWrite">
+      <p class="muted small nb-hint">Escreva com a caneta, uma tarefa por linha. O tablet transforma sua letra em texto. Ex.: “ligar para a Ana amanhã às 10h urgente”.</p>
+      <div class="nb-sheet">
+        <textarea id="nbText" class="paper" spellcheck="true" placeholder="Escreva aqui…" aria-label="Folha do caderno, uma tarefa por linha"></textarea>
+        <aside class="nb-side">
+          <p class="nb-eyebrow">Vai virar</p>
+          <ol id="nbPreview" class="nb-preview" hidden></ol>
+          <div class="row">
+            <button type="button" id="nbSave" class="btn primary" disabled>Salvar tarefa</button>
+            <button type="button" id="nbClear" class="btn ghost">Limpar folha</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="nbDraw" hidden>
+      <p class="muted small nb-hint">Rascunhe à mão livre. A folha é salva como imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada é ignorada.</p>
+      <div class="nb-tools row">
+        <button type="button" class="btn small" data-tool="caneta" aria-pressed="true">Caneta</button>
+        <button type="button" class="btn small" data-tool="borracha" aria-pressed="false">Borracha</button>
+        <button type="button" id="nbUndo" class="btn small ghost">Desfazer</button>
+        <button type="button" id="nbWipe" class="btn small ghost">Apagar tudo</button>
+        <button type="button" id="nbMore" class="btn small ghost">+ Linhas</button>
+      </div>
+      <div class="nb-canvas-wrap"><canvas id="nbCanvas" class="paper-canvas"></canvas></div>
+      <div class="row nb-save-row">
+        <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
+        <button type="button" id="nbSaveDrawing" class="btn primary">Salvar como tarefa</button>
+      </div>
+    </div>
+  </section>
 
   <footer class="capture">
     <div id="preview" class="preview" hidden></div>
@@ -127,6 +172,7 @@
           <button id="recordAudio" type="button" class="btn ghost small">● Gravar áudio</button>
         </div>
       </div>
+      <p id="createdInfo" class="muted small"></p>
       <p id="calendarInfo" class="muted small"></p>
       <div class="sheet-actions">
         <button type="button" id="toggleDoneBtn" class="btn">Concluir</button>

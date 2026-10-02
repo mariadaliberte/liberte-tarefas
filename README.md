@@ -20,6 +20,10 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
 - **Responsável:** use `@Nome`. Se a pessoa tiver e-mail cadastrado em Ajustes → Pessoas, ela recebe convite na agenda.
 - **Prioridade:** Urgente, Alta, Normal, Baixa (lista ordenada automaticamente).
 - **Visões:** Tudo (Atrasadas, Hoje, Amanhã, Próximos 7 dias, Mais adiante, Sem data), Agenda (próximos 30 dias junto com seus compromissos do Google), Pessoas (o que está com cada um) e Feitas.
+- **Data de criação automática:** cada tarefa mostra quando foi criada (e como: digitada, por voz, foto ou caderno). Tarefas paradas há 7 dias ou mais ganham o aviso “há N dias”. A data também vai na descrição do evento no Google Agenda.
+- **Caderno (tablet com caneta):** aba “Caderno” com folha pautada.
+  - *Escrever:* escreva à mão, uma tarefa por linha; o tablet converte sua letra em texto (Scribble no iPad com Apple Pencil; S Pen ou teclado com escrita à mão no Android). O app mostra ao lado como cada linha vai virar tarefa (data, prioridade, responsável) e salva todas de uma vez. O rascunho fica guardado se você sair.
+  - *Desenhar:* rascunho livre (setas, esquemas). A folha vira imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada na tela é ignorada.
 - **Revisão diária:** em Ajustes, cria um lembrete recorrente (seg a sex) para revisar as tarefas sem data.
 - **Nada se perde:** tudo é salvo no aparelho na hora, inclusive sem internet, e copiado para o seu Google Drive (pasta oculta do app + pasta “Liberte Tarefas - Anexos” para fotos e áudios). Abre no celular e no computador com os mesmos dados.
 - **Compartilhar para o app (Android):** no WhatsApp, segure a mensagem → Compartilhar → Tarefas.
@@ -85,4 +89,5 @@ Arquivos principais:
 - `js/google.js` — login e chamadas às APIs do Google
 - `js/store.js` — armazenamento no aparelho
 - `js/app.js` — interface
+- `js/notebook.js` — modo Caderno (escrita e desenho com caneta)
 - `css/styles.css` — visual (cores da marca no topo do arquivo)

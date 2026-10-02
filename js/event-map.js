@@ -42,6 +42,10 @@ export function buildEvent(task, settings, { timeZone = 'America/Sao_Paulo', app
     lines.push('', 'Anexos:');
     links.forEach((a) => lines.push(a.driveLink));
   }
+  if (task.createdAt) {
+    const c = new Date(task.createdAt);
+    lines.push(`Criada em: ${pad(c.getDate())}/${pad(c.getMonth() + 1)}/${c.getFullYear()} às ${pad(c.getHours())}:${pad(c.getMinutes())}`);
+  }
   lines.push('', `Criado no Liberte Tarefas${appUrl ? ` — ${appUrl}` : ''}`);
 
   const event = {
