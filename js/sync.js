@@ -47,7 +47,7 @@ export async function syncNow() {
     setStatus('syncing', 'Sincronizando…');
     try {
       const remote = await g.readRemoteTasks();
-      if (remote?.tasks) store.mergeRemote(remote.tasks);
+      if (remote) store.mergeRemote(remote);
       await uploadAttachments();
       await syncCalendar();
       await g.writeRemoteTasks(store.exportData());
@@ -69,7 +69,11 @@ export async function syncNow() {
 }
 
 async function uploadAttachments() {
-  for (const task of store.allTasks()) {
+  const items = [
+    ...store.allTasks().map((x) => [x, store.updateTask]),
+    ...store.allNotes().map((x) => [x, store.updateNote]),
+  ];
+  for (const [task, update] of items) {
     let changed = false;
     const attachments = [];
     for (const a of task.attachments || []) {
@@ -80,14 +84,15 @@ async function uploadAttachments() {
       attachments.push({ ...a, driveId: file.id, driveLink: file.webViewLink });
       changed = true;
     }
-    if (changed) store.updateTask(task.id, { attachments }, { silent: true, touch: false });
+    if (changed) update(task.id, { attachments }, { silent: true, touch: false });
   }
 }
 
 async function syncCalendar() {
   const settings = store.getSettings();
   for (const task of store.allTasks({ includeDeleted: true })) {
-    const event = buildEvent(task, settings, { timeZone, appUrl });
+    const projectName = store.getProject(task.projectId)?.name;
+    const event = buildEvent(task, settings, { timeZone, appUrl, projectName });
     const cal = task.calendar;
 
     if (!event) {

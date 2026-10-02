@@ -44,13 +44,86 @@ async function pdfToImages(file, maxPages = 20) {
   return blobs;
 }
 
+// Cores da caneta e do marca-texto. "screen" ajusta o preto para o tema escuro.
+export const PEN_COLORS = [
+  { id: 'preto', label: 'Preto', hex: '#1f1a1d' },
+  { id: 'azul', label: 'Azul', hex: '#1d4ed8' },
+  { id: 'vermelho', label: 'Vermelho', hex: '#d12a2a' },
+  { id: 'verde', label: 'Verde', hex: '#18864b' },
+  { id: 'roxo', label: 'Roxo', hex: '#6d2f8e' },
+  { id: 'laranja', label: 'Laranja', hex: '#e07a10' },
+];
+export const MARKER_COLORS = [
+  { id: 'amarelo', label: 'Amarelo', hex: '#ffe600' },
+  { id: 'verde', label: 'Verde', hex: '#5ff26b' },
+  { id: 'rosa', label: 'Rosa', hex: '#ff7ac8' },
+  { id: 'azul', label: 'Azul', hex: '#5cd3ff' },
+  { id: 'laranja', label: 'Laranja', hex: '#ffab40' },
+];
+const MARKER_ALPHA = 0.38;
+const TOOLS_KEY = 'lt.notebook.tools';
+
+// Imagem ou PDF -> lista de imagens (uma por página).
+export async function fileToImages(file, compressImage) {
+  if (isPdf(file)) return pdfToImages(file);
+  return [await compressImage(file, 2000)];
+}
+
 const isPdf = (file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
 export function initNotebook(deps) {
   const {
     $, esc, parseInput, createFromText, makeAttachment, createTask, openTask, toast, dateLabel, stamp, PRIORITIES,
-    compressImage, putFile, getFile, removeFile,
+    compressImage, putFile, getFile, removeFile, store, sync, openNote,
   } = deps;
+
+  // ---------- Destino: tarefas soltas, tarefas de um projeto ou anotação de projeto ----------
+  const dest = $('#nbDest');
+  const DEST_KEY = 'lt.notebook.dest';
+
+  function renderDestinations() {
+    const current = dest.value || (() => { try { return localStorage.getItem(DEST_KEY) || ''; } catch { return ''; } })();
+    const projs = store.allProjects({ includeArchived: false });
+    dest.innerHTML = `<option value="">Tarefas (sem projeto)</option>${projs.length ? `
+      <optgroup label="Tarefas do projeto">${projs.map((p) => `<option value="task:${p.id}">${esc(p.name)}</option>`).join('')}</optgroup>
+      <optgroup label="Anotação no projeto">${projs.map((p) => `<option value="note:${p.id}">📓 ${esc(p.name)}</option>`).join('')}</optgroup>` : ''}`;
+    dest.value = [...dest.options].some((o) => o.value === current) ? current : '';
+    updateDestLabels();
+  }
+
+  function destination() {
+    const [kind, projectId] = (dest.value || '').split(':');
+    return { kind: kind === 'note' ? 'note' : 'task', projectId: projectId || null };
+  }
+
+  function updateDestLabels() {
+    const d = destination();
+    const note = d.kind === 'note';
+    $('#nbSaveDrawing').textContent = note ? 'Salvar como anotação' : 'Salvar como tarefa';
+    if (note) saveBtn.textContent = 'Salvar anotação';
+    else updatePreview();
+  }
+
+  dest.addEventListener('change', () => {
+    try { localStorage.setItem(DEST_KEY, dest.value); } catch { /* sem armazenamento */ }
+    updateDestLabels();
+    updatePreview();
+  });
+
+  // Página(s) prontas viram tarefa ou anotação conforme o destino escolhido.
+  function saveImages(attachments, typedTitle, fallbackTitle) {
+    const d = destination();
+    if (d.kind === 'note' && d.projectId) {
+      const note = store.createNote({ projectId: d.projectId, title: typedTitle || fallbackTitle, attachments });
+      sync.scheduleSync();
+      toast(`Anotação salva em ${store.getProject(d.projectId)?.name || 'projeto'} — toque para abrir`, { action: () => openNote(note.id) });
+      return;
+    }
+    const task = typedTitle
+      ? createFromText(typedTitle, { attachments, source: 'caderno', projectId: d.projectId })
+      : createTask({ title: fallbackTitle, attachments, source: 'caderno', projectId: d.projectId });
+    openTask(task.id, { focusTitle: !typedTitle });
+  }
 
   const root = $('#notebook');
   const text = $('#nbText');
@@ -82,7 +155,8 @@ export function initNotebook(deps) {
   function updatePreview() {
     try { localStorage.setItem(DRAFT_KEY, text.value); } catch { /* sem armazenamento */ }
     const items = lines();
-    saveBtn.textContent = items.length > 1 ? `Salvar ${items.length} tarefas` : 'Salvar tarefa';
+    const asNote = dest.value.startsWith('note:');
+    saveBtn.textContent = asNote ? 'Salvar anotação' : items.length > 1 ? `Salvar ${items.length} tarefas` : 'Salvar tarefa';
     saveBtn.disabled = !items.length;
     preview.innerHTML = items.map((line) => {
       const p = parseInput(line);
@@ -99,7 +173,16 @@ export function initNotebook(deps) {
   saveBtn.addEventListener('click', () => {
     const items = lines();
     if (!items.length) return;
-    items.forEach((line) => createFromText(line, { source: 'caderno' }));
+    const d = destination();
+    if (d.kind === 'note' && d.projectId) {
+      const note = store.createNote({ projectId: d.projectId, title: items[0].slice(0, 60), body: text.value.trim() });
+      sync.scheduleSync();
+      text.value = '';
+      updatePreview();
+      toast(`Anotação salva em ${store.getProject(d.projectId)?.name || 'projeto'} — toque para abrir`, { action: () => openNote(note.id) });
+      return;
+    }
+    items.forEach((line) => createFromText(line, { source: 'caderno', projectId: d.projectId }));
     text.value = '';
     updatePreview();
     toast(items.length > 1 ? `${items.length} tarefas salvas.` : 'Tarefa salva.');
@@ -117,6 +200,8 @@ export function initNotebook(deps) {
   let template = null; // { url, w, h }
   let current = null;
   let tool = 'caneta';
+  let toolPrefs = { caneta: 'azul', marca: 'amarelo' };
+  try { toolPrefs = { ...toolPrefs, ...JSON.parse(localStorage.getItem(TOOLS_KEY) || '{}') }; } catch { /* sem armazenamento */ }
   let penSeen = false;
   let cssW = 0;
   let cssH = 0;
@@ -174,10 +259,52 @@ export function initNotebook(deps) {
     c.restore();
   }
 
-  function drawStroke(c, s, W) {
+  // Marca-texto: traço único, largo e translúcido (sem "bolinhas" escuras nas emendas).
+  function drawMarker(c, s, W) {
     const pts = s.points;
-    if (pts.length === 1) segment(c, s, pts[0], { ...pts[0], x: pts[0].x + 0.0002 }, W);
-    for (let i = 1; i < pts.length; i++) segment(c, s, pts[i - 1], pts[i], W);
+    c.save();
+    c.globalAlpha = MARKER_ALPHA;
+    c.globalCompositeOperation = 'source-over';
+    c.strokeStyle = c === ctx ? s.color : s.exportColor;
+    c.lineWidth = s.width * W;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.beginPath();
+    c.moveTo(pts[0].x * W, pts[0].y * W);
+    if (pts.length === 1) c.lineTo(pts[0].x * W + 0.1, pts[0].y * W);
+    for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x * W, pts[i].y * W);
+    c.stroke();
+    c.restore();
+  }
+
+  // Redesenho: trechos com espessura parecida viram um caminho só (sem marcas nas emendas).
+  function drawStroke(c, s, W) {
+    if (s.marker) return drawMarker(c, s, W);
+    const pts = s.points;
+    if (pts.length === 1) return segment(c, s, pts[0], { ...pts[0], x: pts[0].x + 0.0002 }, W);
+    if (s.erase) {
+      for (let i = 1; i < pts.length; i++) segment(c, s, pts[i - 1], pts[i], W);
+      return;
+    }
+    const base = s.width * W;
+    const widthAt = (a, b) => Math.round(base * (0.45 + (a.p + b.p) / 2) * 4) / 4;
+    c.save();
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.strokeStyle = c === ctx ? s.color : s.exportColor;
+    let i = 1;
+    while (i < pts.length) {
+      const w = widthAt(pts[i - 1], pts[i]);
+      c.lineWidth = w;
+      c.beginPath();
+      c.moveTo(pts[i - 1].x * W, pts[i - 1].y * W);
+      while (i < pts.length && widthAt(pts[i - 1], pts[i]) === w) {
+        c.lineTo(pts[i].x * W, pts[i].y * W);
+        i++;
+      }
+      c.stroke();
+    }
+    c.restore();
   }
 
   function redraw(c, W, H) {
@@ -200,12 +327,25 @@ export function initNotebook(deps) {
     if (penSeen && e.pointerType === 'touch') return;
     canvas.setPointerCapture(e.pointerId);
     const erase = tool === 'borracha' || e.button === 5 || (e.buttons & 32);
-    const onTemplate = mode === 'folha';
+    const marker = !erase && tool === 'marca';
+    let hex = '#1f1a1d';
+    let screen = hex;
+    if (marker) {
+      hex = (MARKER_COLORS.find((c) => c.id === toolPrefs.marca) || MARKER_COLORS[0]).hex;
+      screen = hex;
+    } else if (!erase) {
+      const pen = PEN_COLORS.find((c) => c.id === toolPrefs.caneta) || PEN_COLORS[0];
+      hex = pen.hex;
+      // No tema escuro a folha pautada fica escura: o preto aparece claro na tela
+      // (na imagem salva, que tem fundo branco, continua preto).
+      screen = pen.id === 'preto' && mode !== 'folha' ? css('--text') : hex;
+    }
     current = {
       erase,
-      color: onTemplate ? '#1d3f8a' : css('--text'),
-      exportColor: onTemplate ? '#1d3f8a' : '#1f1a1d',
-      width: (erase ? 22 : 2.6) / cssW,
+      marker,
+      color: screen,
+      exportColor: hex,
+      width: (erase ? 22 : marker ? 20 : 2.6) / cssW,
       points: [point(e)],
     };
     strokes().push(current);
@@ -220,21 +360,50 @@ export function initNotebook(deps) {
       const prev = current.points[current.points.length - 1];
       const next = point(ev);
       current.points.push(next);
-      segment(ctx, current, prev, next, cssW);
+      if (!current.marker) segment(ctx, current, prev, next, cssW);
     }
+    if (current.marker) redraw(ctx, cssW, cssH);
     e.preventDefault();
   });
 
-  const end = () => { current = null; };
+  const end = () => {
+    if (current && !current.erase && !current.marker) redraw(ctx, cssW, cssH);
+    current = null;
+  };
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
+
+  const swatches = $('#nbSwatches');
+
+  function renderSwatches() {
+    const list = tool === 'marca' ? MARKER_COLORS : tool === 'caneta' ? PEN_COLORS : [];
+    const chosen = toolPrefs[tool];
+    swatches.hidden = !list.length;
+    swatches.innerHTML = list.map((c) => `<button type="button" class="swatch${tool === 'marca' ? ' marker' : ''}" data-color="${c.id}"
+      style="--sw:${c.hex}" aria-label="${tool === 'marca' ? 'Marca-texto' : 'Caneta'} ${c.label}" aria-pressed="${c.id === chosen}"></button>`).join('');
+    for (const b of root.querySelectorAll('[data-tool]')) {
+      b.style.setProperty('--tool', b.dataset.tool === 'caneta'
+        ? (PEN_COLORS.find((c) => c.id === toolPrefs.caneta) || PEN_COLORS[0]).hex
+        : b.dataset.tool === 'marca' ? (MARKER_COLORS.find((c) => c.id === toolPrefs.marca) || MARKER_COLORS[0]).hex : 'transparent');
+    }
+  }
+
+  swatches.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-color]');
+    if (!b) return;
+    toolPrefs[tool] = b.dataset.color;
+    try { localStorage.setItem(TOOLS_KEY, JSON.stringify(toolPrefs)); } catch { /* sem armazenamento */ }
+    renderSwatches();
+  });
 
   for (const btn of root.querySelectorAll('[data-tool]')) {
     btn.addEventListener('click', () => {
       tool = btn.dataset.tool;
       root.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      renderSwatches();
     });
   }
+  renderSwatches();
   $('#nbUndo').addEventListener('click', () => { strokes().pop(); redraw(ctx, cssW, cssH); });
   $('#nbWipe').addEventListener('click', () => { strokes().length = 0; redraw(ctx, cssW, cssH); });
   $('#nbMore').addEventListener('click', () => { extraLines += 8; resizeCanvas(); });
@@ -300,13 +469,10 @@ export function initNotebook(deps) {
     const att = await makeAttachment(blob, 'image');
     const typed = $('#nbDrawTitle').value.trim();
     const label = mode === 'folha' ? 'Folha de gestão' : 'Anotação à mão';
-    const task = typed
-      ? createFromText(typed, { attachments: [att], source: 'caderno' })
-      : createTask({ title: `${label} de ${stamp()}`, attachments: [att], source: 'caderno' });
     strokes().length = 0;
     redraw(ctx, cssW, cssH);
     $('#nbDrawTitle').value = '';
-    openTask(task.id, { focusTitle: !typed });
+    saveImages([att], typed, `${label} de ${stamp()}`);
   });
 
   // ---------- Modelo da folha ----------
@@ -319,10 +485,7 @@ export function initNotebook(deps) {
     templateImg.src = url;
   }
 
-  async function fileToImages(file) {
-    if (isPdf(file)) return pdfToImages(file);
-    return [await compressImage(file, 2000)];
-  }
+  const toImages = (file) => fileToImages(file, compressImage);
 
   async function chooseTemplate(e) {
     const file = e.target.files[0];
@@ -330,7 +493,7 @@ export function initNotebook(deps) {
     if (!file) return;
     try {
       toast('Preparando sua folha…');
-      const [blob] = await fileToImages(file);
+      const [blob] = await toImages(file);
       await putFile(TEMPLATE_ID, blob);
       await showTemplate(blob);
       strokesBy.folha.length = 0;
@@ -359,11 +522,10 @@ export function initNotebook(deps) {
       toast('Anexando…');
       const attachments = [];
       for (const file of files) {
-        for (const blob of await fileToImages(file)) attachments.push(await makeAttachment(blob, 'image'));
+        for (const blob of await toImages(file)) attachments.push(await makeAttachment(blob, 'image'));
       }
       const pages = attachments.length > 1 ? ` (${attachments.length} páginas)` : '';
-      const task = createTask({ title: `Folha de gestão de ${stamp()}${pages}`, attachments, source: 'caderno' });
-      openTask(task.id, { focusTitle: true });
+      saveImages(attachments, '', `Folha de gestão de ${stamp()}${pages}`);
     } catch (err) {
       console.error(err);
       toast(err.message || 'Não consegui abrir esse arquivo. Use imagem (JPG/PNG) ou PDF.');
@@ -377,7 +539,15 @@ export function initNotebook(deps) {
   window.addEventListener('resize', () => { if (!$('#nbDraw').hidden) resizeCanvas(); });
 
   return {
+    setDestination(value) {
+      renderDestinations();
+      dest.value = [...dest.options].some((o) => o.value === value) ? value : '';
+      try { localStorage.setItem(DEST_KEY, dest.value); } catch { /* sem armazenamento */ }
+      updateDestLabels();
+      updatePreview();
+    },
     show() {
+      renderDestinations();
       if (!$('#nbDraw').hidden) resizeCanvas();
     },
   };

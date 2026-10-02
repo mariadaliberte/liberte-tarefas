@@ -24,7 +24,7 @@ function nextDay(date) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
-export function buildEvent(task, settings, { timeZone = 'America/Sao_Paulo', appUrl = '' } = {}) {
+export function buildEvent(task, settings, { timeZone = 'America/Sao_Paulo', appUrl = '', projectName = '' } = {}) {
   if (!task.date || task.deleted) return null;
 
   const isAppointment = task.kind === 'compromisso';
@@ -37,6 +37,7 @@ export function buildEvent(task, settings, { timeZone = 'America/Sao_Paulo', app
   if (task.notes) lines.push(task.notes, '');
   lines.push(`Prioridade: ${PRIORITY_LABELS[task.priority] || 'Normal'}`);
   if (task.assignee) lines.push(`Responsável: ${task.assignee}`);
+  if (projectName) lines.push(`Projeto: ${projectName}`);
   const links = (task.attachments || []).filter((a) => a.driveLink);
   if (links.length) {
     lines.push('', 'Anexos:');

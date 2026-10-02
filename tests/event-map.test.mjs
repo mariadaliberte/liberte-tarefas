@@ -56,6 +56,11 @@ test('descrição do evento traz a data de criação', () => {
   assert.match(ev.description, /Criada em: 01\/10\/2026 às 14:05/);
 });
 
+test('descrição do evento traz o projeto', () => {
+  const ev = buildEvent(base, settings, { projectName: 'Lançamento Fluir' });
+  assert.match(ev.description, /Projeto: Lançamento Fluir/);
+});
+
 test('hash muda quando a tarefa muda', () => {
   assert.notEqual(eventHash(buildEvent(base, settings)), eventHash(buildEvent({ ...base, title: 'X' }, settings)));
 });

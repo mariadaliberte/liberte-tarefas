@@ -3,7 +3,8 @@ import * as g from './google.js';
 import * as sync from './sync.js';
 import { parseTask, formatDate } from './parser.js';
 import { CONFIG } from './config.js';
-import { initNotebook } from './notebook.js';
+import { initNotebook, fileToImages } from './notebook.js';
+import { initProjects } from './projects.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -16,6 +17,8 @@ const state = {
   agenda: null,
   agendaLoadedAt: 0,
   editingId: null,
+  projectId: null,
+  projectTab: 'tarefas',
 };
 
 if (!store.getSettings().clientId && CONFIG.googleClientId) {
@@ -147,6 +150,10 @@ function taskCard(t) {
     chips.push(`<span class="chip prio-${t.priority}">${store.PRIORITIES[t.priority].label}</span>`);
   }
   if (t.assignee) chips.push(`<span class="chip person">👤 ${esc(t.assignee)}</span>`);
+  const project = store.getProject(t.projectId);
+  if (project && !(state.view === 'projetos' && state.projectId === project.id)) {
+    chips.push(`<span class="chip project" style="--pc:${esc(project.color)}">${esc(project.name)}</span>`);
+  }
   const imgs = (t.attachments || []).filter((a) => a.type === 'image');
   const audios = (t.attachments || []).filter((a) => a.type === 'audio');
   if (audios.length) chips.push('<span class="chip">🎙 áudio</span>');
@@ -257,18 +264,32 @@ function renderFeitas(all) {
   return group('Concluídas', done) || '<div class="empty"><b>Nada concluído ainda</b>Toque no círculo de uma tarefa para concluir.</div>';
 }
 
+function currentProjectId() {
+  return state.view === 'projetos' ? store.getProject(state.projectId)?.id || null : null;
+}
+
 function render() {
   const notebookOpen = state.view === 'caderno';
   document.body.classList.toggle('notebook-open', notebookOpen);
+  // Na lista de projetos os filtros de tarefa não se aplicam.
+  document.body.classList.toggle('projects-list', state.view === 'projetos' && !currentProjectId());
   $('#notebook').hidden = !notebookOpen;
   if (notebookOpen) {
     notebook?.show();
     return;
   }
+  const project = store.getProject(currentProjectId());
+  const shortName = project && project.name.length > 18 ? `${project.name.slice(0, 17).trim()}…` : project?.name;
+  input.placeholder = project ? `Tarefa em ${shortName}` : 'Anote, fale ou fotografe…';
   const all = store.allTasks().filter(matchesFilters);
   const open = all.filter((t) => t.status !== 'feita');
   const views = { tudo: renderTudo, agenda: renderAgenda, pessoas: renderPessoas };
-  $('#list').innerHTML = state.view === 'feitas' ? renderFeitas(all) : views[state.view](open);
+  if (state.view === 'projetos') {
+    $('#list').innerHTML = projects.renderView(matchesFilters);
+    projects.hydrate($('#list'));
+  } else {
+    $('#list').innerHTML = state.view === 'feitas' ? renderFeitas(all) : views[state.view](open);
+  }
 
   for (const img of $$('img[data-file]')) {
     const task = store.getTask(img.closest('.card').dataset.id);
@@ -310,7 +331,14 @@ async function loadAgenda(force = false) {
 const input = $('#captureInput');
 
 function parseInput(text) {
-  return parseTask(text, { knownPeople: store.knownPeople() });
+  return parseTask(text, {
+    knownPeople: store.knownPeople(),
+    knownProjects: store.allProjects({ includeArchived: false }).map((p) => p.name),
+  });
+}
+
+function projectIdByName(name) {
+  return name ? store.allProjects().find((p) => p.name === name)?.id || null : null;
 }
 
 function updatePreview() {
@@ -325,6 +353,8 @@ function updatePreview() {
   if (p.date) chips.push(`<span class="chip today">${p.deadline ? 'até ' : ''}${dateLabel(p.date)}${p.time ? ` · ${p.time}` : ''}</span>`);
   if (p.priority) chips.push(`<span class="chip prio-${p.priority}">${store.PRIORITIES[p.priority].label}</span>`);
   if (p.assignee) chips.push(`<span class="chip person">👤 ${esc(p.assignee)}</span>`);
+  const project = store.getProject(projectIdByName(p.project) || currentProjectId());
+  if (project) chips.push(`<span class="chip project" style="--pc:${esc(project.color)}">${esc(project.name)}</span>`);
   box.innerHTML = chips.join('');
   box.hidden = false;
 }
@@ -341,6 +371,8 @@ function createFromText(text, extra = {}) {
     assignee: p.assignee,
     assigneeEmail: store.personEmail(p.assignee),
     ...extra,
+    // "#projeto" escrito no texto vale mais que o projeto aberto na tela.
+    projectId: projectIdByName(p.project) || extra.projectId || null,
   });
   sync.scheduleSync();
   return task;
@@ -349,7 +381,7 @@ function createFromText(text, extra = {}) {
 function submitCapture(source = 'texto') {
   const text = input.value.trim();
   if (!text) return;
-  const task = createFromText(text, { source });
+  const task = createFromText(text, { source, projectId: currentProjectId() });
   input.value = '';
   updatePreview();
   const when = task.date ? ` · ${dateLabel(task.date)}${task.time ? ` ${task.time}` : ''}` : '';
@@ -556,6 +588,12 @@ function openTask(id, { focusTitle = false } = {}) {
   f.assigneeEmail.value = t.assigneeEmail || '';
   f.reminders.value = remindersToValue(t.reminders);
   f.notes.value = t.notes || '';
+  const projs = store.allProjects();
+  f.projectId.innerHTML = `<option value="">Sem projeto</option>${projs.map((p) => `<option value="${p.id}">${esc(p.name)}${p.status === 'arquivado' ? ' (arquivado)' : ''}</option>`).join('')}`;
+  f.projectId.value = store.getProject(t.projectId)?.id || '';
+  const fromNote = t.noteId ? store.getNote(t.noteId) : null;
+  $('#taskFromNote').hidden = !fromNote;
+  if (fromNote) $('#taskFromNote').innerHTML = `Veio da anotação <button type="button" class="link" data-open-note="${fromNote.id}">“${esc(fromNote.title || 'sem título')}”</button>`;
   $('#taskDialogTitle').textContent = t.kind === 'compromisso' ? 'Compromisso' : 'Tarefa';
   $('#toggleDoneBtn').textContent = t.status === 'feita' ? 'Reabrir' : 'Concluir ✓';
   const created = new Date(t.createdAt);
@@ -595,6 +633,7 @@ taskForm.addEventListener('submit', (e) => {
     assigneeEmail,
     reminders: rem === '' ? null : rem === 'none' ? [] : rem.split(',').map(Number),
     notes: f.notes.value.trim(),
+    projectId: f.projectId.value || null,
   });
   if (assignee && assigneeEmail) store.rememberPerson(assignee, assigneeEmail);
   sync.scheduleSync();
@@ -642,7 +681,10 @@ $('#recordAudio').addEventListener('click', async () => {
 
 $('#list').addEventListener('click', (e) => {
   const card = e.target.closest('.card[data-id]');
-  if (!card) return;
+  if (!card) {
+    if (state.view === 'projetos') projects.onListClick(e);
+    return;
+  }
   if (e.target.closest('[data-action="toggle"]')) {
     const t = store.toggleDone(card.dataset.id);
     sync.scheduleSync();
@@ -654,6 +696,8 @@ $('#list').addEventListener('click', (e) => {
 
 for (const tab of $$('.tabs button')) {
   tab.addEventListener('click', () => {
+    // Tocar em "Projetos" de dentro de um projeto volta para a lista.
+    if (tab.dataset.view === 'projetos' && state.view === 'projetos') state.projectId = null;
     state.view = tab.dataset.view;
     $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
     if (state.view === 'agenda') loadAgenda();
@@ -851,9 +895,9 @@ $('#importInput').addEventListener('change', async (e) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    store.mergeRemote(data.tasks || []);
+    store.mergeRemote(data);
     sync.scheduleSync();
-    toast(`Backup restaurado (${(data.tasks || []).length} itens).`);
+    toast(`Backup restaurado (${(data.tasks || []).length} tarefas, ${(data.projects || []).length} projetos).`);
   } catch {
     toast('Arquivo de backup inválido.');
   }
@@ -897,11 +941,41 @@ function checkLocalReminders() {
 
 // ---------- Caderno ----------
 
+const projects = initProjects({
+  $, esc, store, sync, state, render, taskCard, sortTasks, group, parseInput, createFromText,
+  toast, ask, openTask, makeAttachment, fileUrl, dateLabel,
+  fileToImages: (file) => fileToImages(file, compressImage),
+  openNotebookFor: (projectId) => openNotebookFor(projectId),
+});
+
+$('#list').addEventListener('change', (e) => { if (state.view === 'projetos') projects.onListChange(e); });
+$('#list').addEventListener('keydown', (e) => { if (state.view === 'projetos') projects.onListKey(e); });
+$('#taskFromNote').addEventListener('click', (e) => {
+  const id = e.target.closest('[data-open-note]')?.dataset.openNote;
+  if (!id) return;
+  taskDialog.close();
+  projects.openNote(id);
+});
+
+function selectTab(view) {
+  state.view = view;
+  $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === view)));
+}
+
+function openNotebookFor(projectId) {
+  selectTab('caderno');
+  notebook.setDestination(projectId ? `note:${projectId}` : '');
+  render();
+  window.scrollTo({ top: 0 });
+}
+
 const notebook = initNotebook({
   $, esc, parseInput, createFromText, makeAttachment, openTask, toast, dateLabel, stamp,
   createTask: (data) => { const t = store.createTask(data); sync.scheduleSync(); return t; },
   PRIORITIES: store.PRIORITIES,
   compressImage, putFile: store.putFile, getFile: store.getFile, removeFile: store.removeFile,
+  store, sync,
+  openNote: (id) => projects.openNote(id),
 });
 
 // ---------- Inicialização ----------

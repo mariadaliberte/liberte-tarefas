@@ -63,12 +63,13 @@ function capitalize(s) {
 export function parseTask(rawText, options = {}) {
   const now = options.now || new Date();
   const knownPeople = options.knownPeople || [];
+  const knownProjects = options.knownProjects || [];
   const text = (rawText || '').normalize('NFC');
   const folded = fold(text);
   const spans = [];
   const result = {
     title: '', date: null, time: null, priority: null, assignee: null,
-    kind: 'tarefa', deadline: false,
+    kind: 'tarefa', deadline: false, project: null,
   };
 
   const take = (match, start = match.index, end = match.index + match[0].length) => {
@@ -100,6 +101,21 @@ export function parseTask(rawText, options = {}) {
   for (const [re, level] of priorities) {
     m = find(re);
     if (m) { result.priority = level; take(m); break; }
+  }
+
+  // ---- Projeto (#nome) ----
+  // "#lancamento" encontra o projeto "Lançamento Fluir" (sem acento, sem espaço, pelo começo do nome).
+  m = /#([\p{L}\d][\p{L}\d_-]*)/u.exec(text);
+  if (m) {
+    const key = fold(m[1]).replace(/[_-]/g, '');
+    const squash = (n) => fold(n).replace(/[^a-z0-9]/g, '');
+    const found = knownProjects.find((n) => squash(n) === key)
+      || knownProjects.find((n) => squash(n).startsWith(key))
+      || knownProjects.find((n) => fold(n).split(/\s+/).some((w) => w.replace(/[^a-z0-9]/g, '').startsWith(key)));
+    if (found) {
+      result.project = found;
+      take(m);
+    }
   }
 
   // ---- Responsável ----
@@ -280,13 +296,16 @@ export function parseTask(rawText, options = {}) {
 
   // ---- Título limpo ----
   spans.sort((a, b) => b[0] - a[0]);
+  // Só limpa preposições soltas nas pontas de onde algo foi retirado.
+  const endTouched = spans.some(([, e]) => !text.slice(e).trim());
+  const startTouched = spans.some(([st]) => !text.slice(0, st).trim());
   let title = text;
   for (const [s, e] of spans) title = `${title.slice(0, s)} ${title.slice(e)}`;
   title = title.replace(/\s+/g, ' ').trim();
   const dangling = /^(?:,|-|–|:|e|para|pra|ate|até|no|na|em|dia|de|do|da|às|as|a|com|o)$/i;
   let words = title.split(' ');
-  while (words.length > 1 && dangling.test(words[words.length - 1])) words.pop();
-  while (words.length > 1 && /^(?:,|-|–|:|e)$/.test(words[0])) words.shift();
+  while (endTouched && words.length > 1 && dangling.test(words[words.length - 1])) words.pop();
+  while (startTouched && words.length > 1 && /^(?:,|-|–|:|e)$/.test(words[0])) words.shift();
   title = words.join(' ').replace(/\s+([,.;:!?])/g, '$1').replace(/[,;:\-–]+$/, '').trim();
   result.title = capitalize(title || text.trim());
 

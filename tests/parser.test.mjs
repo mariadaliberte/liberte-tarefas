@@ -115,3 +115,17 @@ test('números comuns no título não viram hora', () => {
   assert.equal(r.time, null);
   assert.equal(r.title, 'Comprar 2 cadeiras');
 });
+
+test('#projeto vincula a tarefa ao projeto e sai do título', () => {
+  const projetos = ['Lançamento Fluir', 'Site novo'];
+  const r = p('gravar vídeo de vendas sexta #lancamento @Ana', { knownProjects: projetos });
+  assert.equal(r.project, 'Lançamento Fluir');
+  assert.equal(r.title, 'Gravar vídeo de vendas');
+  assert.equal(r.assignee, 'Ana');
+  assert.equal(p('revisar textos #site', { knownProjects: projetos }).project, 'Site novo');
+  assert.equal(p('revisar textos #fluir', { knownProjects: projetos }).project, 'Lançamento Fluir');
+  // hashtag sem projeto correspondente fica no texto
+  const r2 = p('postar #dica do dia', { knownProjects: projetos });
+  assert.equal(r2.project, null);
+  assert.equal(r2.title, 'Postar #dica do dia');
+});

@@ -32,6 +32,7 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-view="tudo" aria-selected="true">Tudo</button>
     <button role="tab" data-view="agenda">Agenda</button>
+    <button role="tab" data-view="projetos">Projetos</button>
     <button role="tab" data-view="pessoas">Pessoas</button>
     <button role="tab" data-view="feitas">Feitas</button>
     <button role="tab" data-view="caderno">✍︎ Caderno</button>
@@ -59,6 +60,7 @@
         <p class="nb-eyebrow">Caderno</p>
         <h2 id="nbDate"></h2>
       </div>
+      <label class="nb-dest"><span>Salvar em</span><select id="nbDest" aria-label="Onde salvar"></select></label>
       <div class="seg nb-mode" role="radiogroup" aria-label="Modo do caderno">
         <label><input type="radio" name="nbMode" value="escrever" checked><span>Escrever</span></label>
         <label><input type="radio" name="nbMode" value="desenhar"><span>Desenhar</span></label>
@@ -98,8 +100,10 @@
 
       <div id="nbDrawArea">
         <div class="nb-tools row">
-          <button type="button" class="btn small" data-tool="caneta" aria-pressed="true">Caneta</button>
-          <button type="button" class="btn small" data-tool="borracha" aria-pressed="false">Borracha</button>
+          <button type="button" class="btn small tool" data-tool="caneta" aria-pressed="true">Caneta</button>
+          <button type="button" class="btn small tool" data-tool="marca" aria-pressed="false">Marca-texto</button>
+          <button type="button" class="btn small tool" data-tool="borracha" aria-pressed="false">Borracha</button>
+          <span id="nbSwatches" class="swatches" role="group" aria-label="Cor"></span>
           <button type="button" id="nbUndo" class="btn small ghost">Desfazer</button>
           <button type="button" id="nbWipe" class="btn small ghost">Apagar tudo</button>
           <button type="button" id="nbMore" class="btn small ghost">+ Linhas</button>
@@ -187,6 +191,8 @@
           <option value="none">Sem lembrete</option>
         </select>
       </label>
+      <label class="field"><span>Projeto</span><select name="projectId"></select></label>
+      <p id="taskFromNote" class="muted small" hidden></p>
       <label class="field"><span>Observações</span><textarea name="notes" rows="3"></textarea></label>
       <div class="field">
         <span>Anexos</span>
@@ -260,6 +266,53 @@
         <label class="btn ghost"><input id="importInput" type="file" accept="application/json" hidden>Restaurar backup</label>
       </div>
       <p class="muted small">Dica: digite “reunião com Ana sexta às 15h urgente @Ana”. O app entende data, hora, prioridade e responsável.</p>
+    </form>
+  </dialog>
+
+ <!-- Projeto -->
+  <dialog id="projectDialog" class="sheet">
+    <form id="projectForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong id="projectDialogTitle">Novo projeto</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <label class="field"><span>Nome do projeto</span><input name="name" required placeholder="Ex.: Lançamento da Mentoria Fluir"></label>
+      <label class="field"><span>Objetivo ou descrição</span><textarea name="description" rows="3" placeholder="Opcional"></textarea></label>
+      <div class="field"><span>Cor</span><div id="projectColors" class="color-choices"></div></div>
+      <label class="check" id="archiveRow"><input type="checkbox" name="archived"> Arquivar (projeto encerrado)</label>
+      <p class="muted small">Dica: escreva <b>#nome-do-projeto</b> em qualquer tarefa para colocá-la no projeto.</p>
+      <div class="sheet-actions">
+        <button type="button" id="deleteProjectBtn" class="btn danger ghost">Excluir projeto</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Anotação de projeto -->
+  <dialog id="noteDialog" class="sheet wide">
+    <form id="noteForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong class="note-project" id="noteProject"></strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <input name="title" class="note-title" placeholder="Título da anotação" aria-label="Título da anotação">
+      <p id="noteMeta" class="muted small"></p>
+      <textarea name="body" class="paper note-body" placeholder="Escreva aqui: reunião, ideias, próximos passos… Uma ideia por linha." aria-label="Texto da anotação"></textarea>
+      <div class="field">
+        <span>Anexos (fotos, páginas da sua folha, PDF)</span>
+        <div id="noteAttachments" class="attachments"></div>
+        <div class="row"><label class="btn ghost small"><input id="noteAddFile" type="file" accept="image/*,application/pdf" multiple hidden>+ Anexar</label></div>
+      </div>
+      <div class="note-tasks">
+        <p class="nb-eyebrow">Gerar tarefas a partir desta anotação</p>
+        <p class="muted small">Marque as linhas que viram tarefas do projeto. Data, prioridade e @responsável escritos na linha são lidos automaticamente.</p>
+        <div id="noteLines" class="note-lines"></div>
+        <div class="row"><button type="button" id="noteMakeTasks" class="btn primary" disabled>Criar tarefa</button></div>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" id="deleteNoteBtn" class="btn danger ghost">Excluir anotação</button>
+      </div>
     </form>
   </dialog>
 

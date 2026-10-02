@@ -2,6 +2,8 @@
 // fotos e áudios no IndexedDB (cabe muito mais que o localStorage).
 
 const TASKS_KEY = 'lt.tasks.v1';
+const PROJECTS_KEY = 'lt.projects.v1';
+const NOTES_KEY = 'lt.notes.v1';
 const SETTINGS_KEY = 'lt.settings.v1';
 
 export const PRIORITIES = {
@@ -28,6 +30,8 @@ export const DEFAULT_SETTINGS = {
 
 const listeners = new Set();
 let tasks = load(TASKS_KEY, []);
+let projects = load(PROJECTS_KEY, []);
+let notes = load(NOTES_KEY, []);
 let settings = { ...DEFAULT_SETTINGS, ...load(SETTINGS_KEY, {}) };
 
 function load(key, fallback) {
@@ -41,6 +45,14 @@ function load(key, fallback) {
 
 function persist() {
   localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+}
+
+function persistProjects() {
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+}
+
+function persistNotes() {
+  localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
 }
 
 function emit(reason) {
@@ -118,28 +130,31 @@ export function toggleDone(id) {
   return updateTask(id, { status: done ? 'feita' : 'aberta', doneAt: done ? new Date().toISOString() : null });
 }
 
-// Mescla tarefas vindas de outro aparelho (via Google Drive): vence a edição mais recente.
-export function mergeRemote(remoteTasks) {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+// Mescla dados vindos de outro aparelho (via Google Drive): vence a edição mais recente.
+// Aceita o formato antigo (lista de tarefas) e o atual ({ tasks, projects, notes }).
+export function mergeRemote(remote) {
+  const data = Array.isArray(remote) ? { tasks: remote } : remote || {};
   let changed = false;
-  for (const remote of remoteTasks || []) {
-    const local = byId.get(remote.id);
-    if (!local) {
-      byId.set(remote.id, remote);
-      changed = true;
-      continue;
+  const merge = (local, incoming) => {
+    const byId = new Map(local.map((x) => [x.id, x]));
+    let dirty = false;
+    for (const r of incoming || []) {
+      const l = byId.get(r.id);
+      const merged = l ? mergeTask(l, r) : r;
+      if (!l || JSON.stringify(merged) !== JSON.stringify(l)) {
+        byId.set(r.id, merged);
+        dirty = true;
+      }
     }
-    const merged = mergeTask(local, remote);
-    if (JSON.stringify(merged) !== JSON.stringify(local)) {
-      byId.set(remote.id, merged);
-      changed = true;
-    }
-  }
-  if (changed) {
-    tasks = [...byId.values()].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-    persist();
-    emit('change');
-  }
+    return dirty ? [...byId.values()].sort((x, y) => (y.createdAt > x.createdAt ? 1 : -1)) : null;
+  };
+  const t = merge(tasks, data.tasks);
+  if (t) { tasks = t; persist(); changed = true; }
+  const p = merge(projects, data.projects);
+  if (p) { projects = p; persistProjects(); changed = true; }
+  const n = merge(notes, data.notes);
+  if (n) { notes = n; persistNotes(); changed = true; }
+  if (changed) emit('change');
   return changed;
 }
 
@@ -159,7 +174,87 @@ function mergeTask(local, remote) {
 }
 
 export function exportData() {
-  return { version: 1, exportedAt: new Date().toISOString(), tasks };
+  return { version: 2, exportedAt: new Date().toISOString(), tasks, projects, notes };
+}
+
+// ---- Projetos ----
+
+export const PROJECT_COLORS = ['#5b2a4e', '#c9963b', '#2f7d6d', '#3e6fb0', '#c2552d', '#7a5cc4', '#b03a6b', '#5c6b73'];
+
+export function allProjects({ includeArchived = true } = {}) {
+  return projects.filter((p) => !p.deleted && (includeArchived || p.status !== 'arquivado'));
+}
+
+export function getProject(id) {
+  return id ? projects.find((p) => p.id === id && !p.deleted) || null : null;
+}
+
+export function createProject(data) {
+  const now = new Date().toISOString();
+  const project = {
+    id: uid(), name: 'Novo projeto', description: '', color: PROJECT_COLORS[projects.length % PROJECT_COLORS.length],
+    status: 'ativo', deleted: false, createdAt: now, ...data, updatedAt: now,
+  };
+  projects.unshift(project);
+  persistProjects();
+  emit('change');
+  return project;
+}
+
+export function updateProject(id, patch) {
+  const project = projects.find((p) => p.id === id);
+  if (!project) return null;
+  Object.assign(project, patch, { updatedAt: new Date().toISOString() });
+  persistProjects();
+  emit('change');
+  return project;
+}
+
+// Excluir o projeto apaga as anotações dele; as tarefas continuam, sem projeto.
+export function deleteProject(id) {
+  for (const t of tasks) if (t.projectId === id && !t.deleted) updateTask(t.id, { projectId: null }, { silent: true });
+  for (const n of notes) if (n.projectId === id && !n.deleted) updateNote(n.id, { deleted: true }, { silent: true });
+  return updateProject(id, { deleted: true });
+}
+
+export function projectTasks(id) {
+  return tasks.filter((t) => t.projectId === id && !t.deleted);
+}
+
+// ---- Anotações (de projeto) ----
+
+export function allNotes({ includeDeleted = false } = {}) {
+  return includeDeleted ? notes : notes.filter((n) => !n.deleted);
+}
+
+export function projectNotes(id) {
+  return notes.filter((n) => n.projectId === id && !n.deleted).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+export function getNote(id) {
+  return notes.find((n) => n.id === id && !n.deleted) || null;
+}
+
+export function createNote(data) {
+  const now = new Date().toISOString();
+  const note = {
+    id: uid(), projectId: null, title: '', body: '', attachments: [], converted: [],
+    deleted: false, createdAt: now, ...data, updatedAt: now,
+  };
+  notes.unshift(note);
+  persistNotes();
+  emit('change');
+  return note;
+}
+
+export function updateNote(id, patch, { silent = false, touch = true } = {}) {
+  const note = notes.find((n) => n.id === id);
+  if (!note) return null;
+  Object.assign(note, patch);
+  if (touch) note.updatedAt = new Date().toISOString();
+  persistNotes();
+  if (!silent) emit('change');
+  return note;
 }
 
 // ---- Pessoas (responsáveis) ----
