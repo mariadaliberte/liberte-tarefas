@@ -5,7 +5,7 @@ export function aiKey() {
   try { return localStorage.getItem('lt.ai.key') || ''; } catch { return ''; }
 }
 
-export async function askClaude({ system, content, effort = 'medium' }) {
+export async function askClaude({ system, content, effort = 'medium', format = null }) {
   const key = aiKey();
   if (!key) throw Object.assign(new Error('Cadastre a chave da IA em Ajustes → Análise com IA.'), { noKey: true });
   const { default: Anthropic } = await import('./vendor/anthropic-sdk.js');
@@ -17,7 +17,7 @@ export async function askClaude({ system, content, effort = 'medium' }) {
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      output_config: { effort },
+      output_config: { effort, ...(format ? { format } : {}) },
       system,
       messages: [{ role: 'user', content }],
     });
