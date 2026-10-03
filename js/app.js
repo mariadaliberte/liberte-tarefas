@@ -912,11 +912,14 @@ $('#toggleDoneBtn').addEventListener('click', () => {
 $('#deleteBtn').addEventListener('click', async () => {
   if (!(await ask('Excluir esta tarefa? Ela também sai do Google Agenda.', 'Excluir'))) return;
   const t = store.getTask(state.editingId);
-  store.deleteTask(state.editingId);
-  for (const a of t.attachments || []) store.removeFile(a.id).catch(() => {});
+  store.deleteTask(t.id);
+  // Anexos ficam no aparelho até a limpeza automática, para o "desfazer" funcionar.
   sync.scheduleSync();
   taskDialog.close();
-  toast('Tarefa excluída.');
+  toast(`Tarefa excluída: ${t.title} — toque para desfazer`, {
+    ms: 6000,
+    action: () => { store.restoreTask(t.id); sync.scheduleSync(); toast('Tarefa restaurada.'); },
+  });
 });
 
 $('#addPhoto').addEventListener('change', async (e) => {

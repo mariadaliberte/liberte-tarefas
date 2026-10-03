@@ -77,6 +77,7 @@ export async function syncNow() {
         : await g.writeRemoteTasks(payload);
       if (duplicates.length) await g.deleteDuplicateTasks();
       store.saveSettings({ lastSyncAt: new Date().toISOString() });
+      for (const id of store.purgeTombstones()) store.removeFile(id).catch(() => {});
       setStatus('ok', 'Sincronizado');
     } catch (e) {
       console.error(e);
