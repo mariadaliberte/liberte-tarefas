@@ -7,6 +7,9 @@ import { initNotebook, fileToImages } from './notebook.js';
 import { initProjects } from './projects.js';
 import * as week from './week.js';
 import { initDashboard } from './dashboard.js';
+import * as recur from './recurrence.js';
+import { enableDrag, isDragging } from './drag.js';
+import { readTasksFromImage } from './ai-read.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -140,7 +143,7 @@ async function fileUrl(att) {
   return url;
 }
 
-const SOURCE_LABEL = { texto: 'digitada', voz: 'por voz', foto: 'por foto', audio: 'por áudio', caderno: 'no caderno' };
+const SOURCE_LABEL = { texto: 'digitada', voz: 'por voz', foto: 'por foto', audio: 'por áudio', caderno: 'no caderno', modelo: 'por modelo de projeto', projeto: 'de anotação', ia: 'lida pela IA', compartilhada: 'compartilhada de outro app', entrada: 'pela caixa de entrada' };
 
 function daysSince(iso) {
   const a = new Date(iso);
@@ -185,8 +188,15 @@ function taskCard(t) {
   const imgs = (t.attachments || []).filter((a) => a.type === 'image');
   const audios = (t.attachments || []).filter((a) => a.type === 'audio');
   if (audios.length) chips.push('<span class="chip">🎙 áudio</span>');
+  if ((t.attachments || []).some((a) => a.type === 'file')) chips.push('<span class="chip">📄 arquivo</span>');
   if (imgs.length > 1) chips.push(`<span class="chip">📷 ${imgs.length}</span>`);
   if (t.notes) chips.push('<span class="chip">📝</span>');
+  if (t.stage === 'fazendo' && t.status !== 'feita') chips.push('<span class="chip today">▶ fazendo</span>');
+  if (t.recurrence) chips.push(`<span class="chip" title="Repete">🔁 ${esc(recur.describe(t.recurrence))}</span>`);
+  if (t.checklist?.length) {
+    const ok = t.checklist.filter((c) => c.done).length;
+    chips.push(`<span class="chip${ok === t.checklist.length ? ' today' : ''}" title="Checklist">☑ ${ok}/${t.checklist.length}</span>`);
+  }
   if (t.calendar?.eventId) chips.push('<span class="chip" title="No Google Agenda">✓ agenda</span>');
   chips.push(createdChip(t));
 
@@ -240,7 +250,15 @@ function renderTudo(open) {
     else if (t.date <= week) buckets.week.push(t);
     else buckets.later.push(t);
   }
-  const actions = '<div class="list-actions"><button type="button" class="btn primary" data-new-task>+ Nova tarefa</button></div>';
+  const board = localGet('lt.kanban') === '1';
+  const mode = board ? localGet('lt.tudo.mode') || 'lista' : 'lista';
+  const actions = `<div class="list-actions">
+    ${board ? `<div class="seg mini-seg" role="radiogroup" aria-label="Visão">
+      <label><input type="radio" name="tudomode" value="lista" ${mode === 'lista' ? 'checked' : ''}><span>Lista</span></label>
+      <label><input type="radio" name="tudomode" value="quadro" ${mode === 'quadro' ? 'checked' : ''}><span>Quadro</span></label>
+    </div>` : ''}
+    <button type="button" class="btn primary" data-new-task>+ Nova tarefa</button></div>`;
+  if (mode === 'quadro') return actions + renderBoard(open);
   const html = [
     group('Atrasadas', buckets.late.sort(sortTasks), { cls: 'overdue' }),
     group('Hoje', buckets.today.sort(sortTasks)),
@@ -309,7 +327,7 @@ function bindAgendaGestures(body) {
   }, { passive: false });
   body.addEventListener('touchend', (e) => {
     if (pinch && e.touches.length < 2) { pinch = null; return; }
-    if (!start || e.changedTouches.length !== 1) return;
+    if (!start || e.changedTouches.length !== 1 || isDragging()) { start = null; return; }
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
     const quick = Date.now() - start.t < 700;
@@ -389,7 +407,7 @@ function renderAgenda() {
     const prefix = it.kind === 'tarefa' ? (it.ref.kind === 'compromisso' ? '' : it.ref.deadline ? '⏰ ' : '☐ ') : '';
     return `<button type="button" class="wk-chip${done ? ' done' : ''}" ${attr} style="--c:${itemColor(it)}">${prefix}${esc(it.title)}</button>`;
   };
-  const allDay = days.map((d) => `<div class="wk-allday-cell">${items.filter((i) => i.allDay && i.day === d).map(chip).join('')}</div>`).join('');
+  const allDay = days.map((d) => `<div class="wk-allday-cell" data-day="${d}">${items.filter((i) => i.allDay && i.day === d).map(chip).join('')}</div>`).join('');
 
   const hours = Array.from({ length: 24 }, (_, h) => `<div class="wk-hour" style="top:calc(var(--hour) * ${h})"><span>${h ? `${String(h).padStart(2, '0')}:00` : ''}</span></div>`).join('');
   const now = new Date();
@@ -443,6 +461,42 @@ function renderAgenda() {
         </div>
       </div>
     </div>`;
+}
+
+// ---------- Quadro Kanban ----------
+
+function renderBoard(open) {
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const done = store.allTasks().filter(matchesFilters)
+    .filter((t) => t.status === 'feita' && t.doneAt && Date.parse(t.doneAt) >= weekAgo)
+    .sort((a, b) => (a.doneAt < b.doneAt ? 1 : -1));
+  const cols = [
+    { key: 'afazer', title: 'A fazer', items: open.filter((t) => t.stage !== 'fazendo').sort(sortTasks) },
+    { key: 'fazendo', title: 'Fazendo', items: open.filter((t) => t.stage === 'fazendo').sort(sortTasks) },
+    { key: 'feito', title: 'Feito (7 dias)', items: done },
+  ];
+  return `<div class="board">${cols.map((c) => `
+    <section class="board-col" data-stage="${c.key}">
+      <header><span>${c.title}</span><span class="muted">${c.items.length}</span></header>
+      <div class="board-cards">${c.items.map(taskCard).join('') || '<p class="muted small board-empty">Arraste tarefas para cá.</p>'}</div>
+    </section>`).join('')}</div>
+    <p class="muted small">No toque: segure um cartão por meio segundo e arraste para outra coluna.</p>`;
+}
+
+function moveToStage(id, stage) {
+  const t = store.getTask(id);
+  if (!t) return;
+  if (stage === 'feito') {
+    if (t.status !== 'feita') {
+      const wasRecurring = !!t.recurrence;
+      const r = store.toggleDone(id);
+      if (wasRecurring) toast(`Concluída: ${r.title}. Próxima: ${dateLabel(r.date)}.`);
+    }
+  } else {
+    if (t.status === 'feita') store.toggleDone(id);
+    store.updateTask(id, { stage: stage === 'fazendo' ? 'fazendo' : null });
+  }
+  sync.scheduleSync();
 }
 
 function renderPessoas(open) {
@@ -587,6 +641,7 @@ function updatePreview() {
   if (p.date) chips.push(`<span class="chip today">${p.deadline ? 'até ' : ''}${dateLabel(p.date)}${p.time ? ` · ${p.time}` : ''}</span>`);
   if (p.priority) chips.push(`<span class="chip prio-${p.priority}">${store.PRIORITIES[p.priority].label}</span>`);
   if (p.assignee) chips.push(`<span class="chip person">👤 ${esc(p.assignee)}</span>`);
+  if (p.recurrence) chips.push(`<span class="chip">🔁 ${esc(recur.describe(p.recurrence))}</span>`);
   const project = store.getProject(projectIdByName(p.project) || currentProjectId());
   if (project) chips.push(`<span class="chip project" style="--pc:${esc(project.color)}">${esc(project.name)}</span>`);
   box.innerHTML = chips.join('');
@@ -604,6 +659,7 @@ function createFromText(text, extra = {}) {
     priority: p.priority || 'normal',
     assignee: p.assignee,
     assigneeEmail: store.personEmail(p.assignee),
+    recurrence: p.recurrence,
     ...extra,
     // "#projeto" escrito no texto vale mais que o projeto aberto na tela.
     projectId: projectIdByName(p.project) || extra.projectId || null,
@@ -670,6 +726,42 @@ $('#photoInput').addEventListener('change', async (e) => {
   sync.scheduleSync();
   openTask(task.id, { focusTitle: !text });
 });
+
+// Arquivos compartilhados de outro app (WhatsApp → Compartilhar → Liberte).
+// O service worker guarda tudo; aqui viram tarefas, uma por compartilhamento. Nada se perde:
+// só apaga do armazenamento temporário depois que a tarefa foi criada.
+async function receiveShared() {
+  if (!('caches' in window)) return;
+  const cache = await caches.open('liberte-share');
+  const metaRes = await cache.match('share/meta');
+  if (!metaRes) return;
+  const shares = await metaRes.json();
+  let last = null;
+  for (const sh of shares) {
+    const attachments = [];
+    for (const f of sh.files) {
+      const res = await cache.match(f.key);
+      if (!res) continue;
+      const blob = await res.blob();
+      const type = (f.type || blob.type).startsWith('image/') ? 'image'
+        : (f.type || blob.type).startsWith('audio/') || /\.(ogg|opus|m4a|mp3)$/i.test(f.name) ? 'audio' : 'file';
+      const content = type === 'image' ? await compressImage(blob) : blob;
+      const id = store.uid();
+      await store.putFile(id, content);
+      attachments.push({ id, type, name: f.name || `${type}-${formatDate(new Date())}-${id}`, mime: content.type || f.type });
+    }
+    const text = sh.text?.trim();
+    const kind = attachments.some((a) => a.type === 'audio') ? 'Áudio' : attachments.some((a) => a.type === 'image') ? 'Foto' : 'Arquivo';
+    last = text
+      ? createFromText(text, { attachments, source: 'compartilhada' })
+      : store.createTask({ title: `${kind} compartilhado em ${stamp()}`, attachments, source: 'compartilhada' });
+    for (const f of sh.files) await cache.delete(f.key);
+  }
+  await cache.delete('share/meta');
+  sync.scheduleSync();
+  if (shares.length > 1) toast(`${shares.length} itens compartilhados viraram tarefas.`);
+  if (last) openTask(last.id, { focusTitle: !shares.at(-1).text });
+}
 
 // ---------- Voz ----------
 
@@ -784,6 +876,17 @@ async function renderAttachments(task) {
       fig.innerHTML = url
         ? `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="Foto anexada"></a>`
         : `<a href="${esc(att.driveLink || '#')}" target="_blank" rel="noopener" class="btn small">Abrir foto no Drive</a>`;
+      if (url) {
+        const read = document.createElement('button');
+        read.type = 'button';
+        read.className = 'btn small ghost ai-read';
+        read.textContent = '✨ Ler com IA';
+        read.title = 'Transformar o que está escrito na foto em tarefas';
+        read.onclick = () => readAttachmentWithAI(task, att, read);
+        fig.appendChild(read);
+      }
+    } else if (att.type === 'file') {
+      fig.innerHTML = `<a href="${url || esc(att.driveLink || '#')}" target="_blank" rel="noopener" class="btn small">📄 ${esc(att.name)}</a>`;
     } else {
       fig.innerHTML = url
         ? `<audio controls src="${url}"></audio>`
@@ -805,6 +908,30 @@ async function renderAttachments(task) {
     box.appendChild(fig);
   }
   if (!task.attachments?.length) box.innerHTML = '<span class="muted small">Nenhum anexo.</span>';
+}
+
+// Foto anexada (caderno, quadro, post-it) → a IA transcreve → confirma → vira tarefas.
+async function readAttachmentWithAI(task, att, btn) {
+  const blob = await store.getFile(att.id);
+  if (!blob) return toast('A foto ainda não está neste aparelho.');
+  btn.disabled = true;
+  btn.textContent = 'Lendo…';
+  try {
+    const lines = await readTasksFromImage(blob);
+    if (!lines.length) return toast('A IA não encontrou tarefas nesta foto.');
+    const list = lines.map((l) => `• ${l}`).join('\n');
+    if (!(await ask(`A IA encontrou ${lines.length} ${lines.length === 1 ? 'tarefa' : 'tarefas'}:\n\n${list}\n\nCriar agora? Depois dá para editar cada uma.`, 'Criar tarefas'))) return;
+    for (const line of lines) createFromText(line, { source: 'ia', projectId: task.projectId || null });
+    sync.scheduleSync();
+    toast(`${lines.length} ${lines.length === 1 ? 'tarefa criada' : 'tarefas criadas'} a partir da foto.`);
+  } catch (e) {
+    console.error(e);
+    if (e.noKey) { taskDialog.close(); openSettings(); }
+    toast(e.message || 'Não consegui ler a foto.', { ms: 7000 });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ Ler com IA';
+  }
 }
 
 // Abre a tarefa para edição, ou uma tarefa nova (id nulo) com campos pré-preenchidos.
@@ -832,6 +959,9 @@ function openTask(id, { focusTitle = false, prefill = {} } = {}) {
   f.projectId.innerHTML = `<option value="">Sem projeto</option>${projs.map((p) => `<option value="${p.id}">${esc(p.name)}${p.status === 'arquivado' ? ' (arquivado)' : ''}</option>`).join('')}`;
   f.projectId.value = store.getProject(t.projectId)?.id || '';
   f.startDate.value = t.startDate || '';
+  setRepeatSelect(t.recurrence);
+  checklistDraft = (t.checklist || []).map((c) => ({ ...c }));
+  renderChecklist();
   const fromNote = t.noteId ? store.getNote(t.noteId) : null;
   $('#taskFromNote').hidden = !fromNote;
   if (fromNote) $('#taskFromNote').innerHTML = `Veio da anotação <button type="button" class="link" data-open-note="${fromNote.id}">“${esc(fromNote.title || 'sem título')}”</button>`;
@@ -849,6 +979,96 @@ function openTask(id, { focusTitle = false, prefill = {} } = {}) {
   taskDialog.showModal();
   if (focusTitle || isNew) { f.title.focus(); f.title.select(); }
 }
+
+// ---------- Repetir ----------
+
+let customRecurrence = null;
+
+function setRepeatSelect(rec) {
+  const sel = taskForm.repeat;
+  const custom = $('#repeatCustom');
+  customRecurrence = null;
+  custom.hidden = true;
+  if (!rec) { sel.value = ''; return; }
+  const simple = rec.freq === 'diaria' && !(rec.interval > 1) ? 'diaria'
+    : rec.freq === 'uteis' ? 'uteis'
+      : rec.freq === 'semanal' && (rec.days || []).length <= 1 && !(rec.interval > 1) ? 'semanal'
+        : rec.freq === 'mensal' && rec.monthDay === 'ultimo' ? 'mensal-ultimo'
+          : rec.freq === 'mensal' && rec.monthDay === 'ultimo-util' ? 'mensal-ultimo-util'
+            : rec.freq === 'mensal' && !(rec.interval > 1) ? 'mensal'
+              : rec.freq === 'anual' ? 'anual' : null;
+  if (simple) { sel.value = simple; return; }
+  customRecurrence = rec;
+  custom.hidden = false;
+  custom.textContent = `Personalizado: ${recur.describe(rec)}`;
+  sel.value = 'custom';
+}
+
+function readRepeatSelect(date) {
+  const v = taskForm.repeat.value;
+  const ref = date || todayStr();
+  const [y, m, d] = ref.split('-').map(Number);
+  switch (v) {
+    case 'diaria': return { freq: 'diaria' };
+    case 'uteis': return { freq: 'uteis' };
+    case 'semanal': return { freq: 'semanal', days: [new Date(y, m - 1, d).getDay()] };
+    case 'mensal': return { freq: 'mensal', monthDay: d };
+    case 'mensal-ultimo': return { freq: 'mensal', monthDay: 'ultimo' };
+    case 'mensal-ultimo-util': return { freq: 'mensal', monthDay: 'ultimo-util' };
+    case 'anual': return { freq: 'anual' };
+    case 'custom': return customRecurrence;
+    default: return null;
+  }
+}
+
+// ---------- Checklist ----------
+
+let checklistDraft = [];
+
+function renderChecklist() {
+  const ul = $('#checklist');
+  ul.innerHTML = checklistDraft.map((c, i) => `
+    <li class="${c.done ? 'done' : ''}">
+      <label><input type="checkbox" data-ck="${i}" ${c.done ? 'checked' : ''}><span>${esc(c.text)}</span></label>
+      <button type="button" class="link small" data-ck-del="${i}" aria-label="Remover item">✕</button>
+    </li>`).join('');
+}
+
+// Em tarefa já existente, marcar um item salva na hora (não depende de "Salvar").
+function persistChecklist() {
+  if (!state.editingId) return;
+  store.setChecklist(state.editingId, checklistDraft.filter((c) => c.text.trim()));
+  sync.scheduleSync();
+}
+
+$('#checklist').addEventListener('change', (e) => {
+  const i = e.target.dataset.ck;
+  if (i == null) return;
+  checklistDraft[i].done = e.target.checked;
+  renderChecklist();
+  persistChecklist();
+});
+$('#checklist').addEventListener('click', (e) => {
+  const i = e.target.closest('[data-ck-del]')?.dataset.ckDel;
+  if (i == null) return;
+  checklistDraft.splice(Number(i), 1);
+  renderChecklist();
+  persistChecklist();
+});
+function addChecklistItem() {
+  const inp = $('#checklistInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  checklistDraft.push({ id: store.uid(), text, done: false });
+  inp.value = '';
+  renderChecklist();
+  persistChecklist();
+  inp.focus();
+}
+$('#checklistAdd').addEventListener('click', addChecklistItem);
+$('#checklistInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); addChecklistItem(); }
+});
 
 function openNewTask(prefill = {}) {
   const email = prefill.assignee ? store.personEmail(prefill.assignee) : null;
@@ -887,7 +1107,11 @@ function saveTaskForm() {
     notes: f.notes.value.trim(),
     projectId: f.projectId.value || null,
     startDate: f.startDate.value && date && f.startDate.value < date ? f.startDate.value : null,
+    checklist: checklistDraft.filter((c) => c.text.trim()),
   };
+  const rec = readRepeatSelect(data.date);
+  data.recurrence = rec;
+  if (rec && !data.date) data.date = recur.firstOccurrence(rec, todayStr());
   if (state.editingId) {
     store.updateTask(state.editingId, data);
   } else {
@@ -904,9 +1128,13 @@ function saveTaskForm() {
 }
 
 $('#toggleDoneBtn').addEventListener('click', () => {
-  store.toggleDone(state.editingId);
+  if (!state.editingId) return;
+  saveTaskForm();
+  const wasRecurring = !!store.getTask(state.editingId)?.recurrence;
+  const t = store.toggleDone(state.editingId);
   sync.scheduleSync();
   taskDialog.close();
+  if (wasRecurring) toast(`Concluída: ${t.title}. Próxima: ${dateLabel(t.date)}.`);
 });
 
 $('#deleteBtn').addEventListener('click', async () => {
@@ -1124,6 +1352,84 @@ $('#eventDeleteBtn').addEventListener('click', async () => {
   }
 });
 
+// ---------- Arrastar: quadro Kanban e agenda ----------
+
+function clearDropTargets() {
+  for (const el of $$('.drop-target')) el.classList.remove('drop-target');
+}
+
+enableDrag($('#list'), {
+  selector: '.board .card[data-id]',
+  onMove: (el, x, y) => {
+    clearDropTargets();
+    if (el) document.elementFromPoint(x, y)?.closest('[data-stage]')?.classList.add('drop-target');
+  },
+  onDrop: (el, x, y) => {
+    clearDropTargets();
+    const col = document.elementFromPoint(x, y)?.closest('[data-stage]');
+    if (col) moveToStage(el.dataset.id, col.dataset.stage);
+  },
+});
+
+function minutesToHHMM(min) {
+  return `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
+}
+
+// Solta um item da agenda: no topo ("dia todo") muda só o dia; na grade, dia e horário (de 15 em 15 min).
+async function agendaDrop(el, x, y, info) {
+  clearDropTargets();
+  const target = document.elementFromPoint(x, y);
+  const allDayCell = target?.closest('.wk-allday-cell');
+  const col = target?.closest('.wk-col');
+  if (!allDayCell && !col) return;
+  const day = (allDayCell || col).dataset.day;
+  let startMin = null;
+  if (col) {
+    const r = col.getBoundingClientRect();
+    startMin = Math.round((((y - info.offY) - r.top) / hourH()) * 60 / 15) * 15;
+    startMin = Math.max(0, Math.min(23 * 60 + 45, startMin));
+  }
+  const taskId = el.dataset.task;
+  if (taskId) {
+    const patch = startMin == null ? { date: day, time: null } : { date: day, time: minutesToHHMM(startMin) };
+    store.updateTask(taskId, patch);
+    sync.scheduleSync();
+    toast(`Remarcada para ${dateLabel(day)}${patch.time ? ` às ${patch.time}` : ''}.`);
+    return;
+  }
+  const ev = (state.agenda || []).find((x) => x.id === el.dataset.event);
+  if (!ev || !g.hasValidToken()) return;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let body;
+  if (startMin == null) {
+    const span = ev.start?.date ? Math.max(1, Math.round((Date.parse(ev.end.date) - Date.parse(ev.start.date)) / 86_400_000)) : 1;
+    body = { start: { date: day, dateTime: null, timeZone: null }, end: { date: week.addDays(day, span), dateTime: null, timeZone: null } };
+  } else {
+    const dur = ev.start?.dateTime ? Math.max(15, Math.round((Date.parse(ev.end.dateTime) - Date.parse(ev.start.dateTime)) / 60_000)) : 60;
+    const endMin = Math.min(24 * 60 - 1, startMin + dur);
+    body = {
+      start: { dateTime: `${day}T${minutesToHHMM(startMin)}:00`, timeZone: tz, date: null },
+      end: { dateTime: `${day}T${minutesToHHMM(endMin)}:00`, timeZone: tz, date: null },
+    };
+  }
+  try {
+    await g.patchEvent(ev.calendarId || 'primary', ev.id, body);
+    toast(`“${ev.summary || 'Compromisso'}” remarcado.`);
+  } catch (err) {
+    toast(`Não foi possível remarcar: ${err.message}`, { ms: 7000 });
+  }
+  await loadAgenda(true);
+}
+
+enableDrag($('#list'), {
+  selector: '.wk-event[data-task], .wk-event[data-event], .wk-chip[data-task], .wk-chip[data-event]',
+  onMove: (el, x, y) => {
+    clearDropTargets();
+    if (el) document.elementFromPoint(x, y)?.closest('.wk-col, .wk-allday-cell')?.classList.add('drop-target');
+  },
+  onDrop: agendaDrop,
+});
+
 // ---------- Nova tarefa / pessoas ----------
 
 const personDialog = $('#personDialog');
@@ -1186,9 +1492,11 @@ $('#list').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-action="toggle"]')) {
+    const wasRecurring = !!store.getTask(card.dataset.id)?.recurrence;
     const t = store.toggleDone(card.dataset.id);
     sync.scheduleSync();
-    if (t.status === 'feita') toast(`Concluída: ${t.title} — desfazer`, { action: () => { store.toggleDone(t.id); sync.scheduleSync(); } });
+    if (wasRecurring) toast(`Concluída: ${t.title}. Próxima: ${dateLabel(t.date)}.`);
+    else if (t.status === 'feita') toast(`Concluída: ${t.title} — desfazer`, { action: () => { store.toggleDone(t.id); sync.scheduleSync(); } });
     return;
   }
   openTask(card.dataset.id);
@@ -1270,7 +1578,10 @@ function openSettings() {
   f.appointmentMinutes.value = s.appointmentMinutes;
   f.inviteAssignee.checked = s.inviteAssignee;
   f.autoSaveDictation.checked = s.autoSaveDictation;
+  f.focusEnabled.checked = s.focusEnabled !== false;
+  f.focusTime.value = s.focusTime || '08:00';
   f.theme.value = localGet('lt.theme') || 'auto';
+  $('#kanbanToggle').checked = localGet('lt.kanban') === '1';
   $('#aiKey').value = localGet('lt.ai.key') || '';
   const editor = $('#peopleEditor');
   editor.innerHTML = '';
@@ -1311,6 +1622,8 @@ function readSettingsForm() {
     appointmentMinutes: Math.max(5, parseInt(f.appointmentMinutes.value, 10) || 60),
     inviteAssignee: f.inviteAssignee.checked,
     autoSaveDictation: f.autoSaveDictation.checked,
+    focusEnabled: f.focusEnabled.checked,
+    focusTime: f.focusTime.value || '08:00',
     people,
   };
 }
@@ -1319,6 +1632,8 @@ settingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
   store.saveSettings(readSettingsForm());
   applyTheme(settingsForm.theme.value);
+  localSet('lt.kanban', $('#kanbanToggle').checked ? '1' : '');
+  render();
   localSet('lt.ai.key', $('#aiKey').value.trim());
   // Atualiza e-mails das tarefas abertas de quem ganhou e-mail agora.
   for (const t of store.allTasks()) {
@@ -1470,6 +1785,7 @@ const projects = initProjects({
 });
 
 $('#list').addEventListener('change', (e) => {
+  if (e.target.name === 'tudomode') { localSet('lt.tudo.mode', e.target.value); render(); return; }
   if (state.view === 'projetos') projects.onListChange(e);
   if (state.view === 'agenda' && e.target.name === 'wkmode') {
     state.agendaMode = e.target.value;
@@ -1517,6 +1833,7 @@ const notebook = initNotebook({
   compressImage, putFile: store.putFile, getFile: store.getFile, removeFile: store.removeFile,
   store, sync,
   openNote: (id) => projects.openNote(id),
+  openSettings: () => openSettings(),
 });
 
 // ---------- Inicialização ----------
@@ -1549,6 +1866,10 @@ if (shared) {
   input.value = shared;
   updatePreview();
   history.replaceState(null, '', location.pathname);
+}
+if (params.has('shared')) {
+  history.replaceState(null, '', location.pathname);
+  receiveShared().catch((e) => { console.error(e); toast('Não consegui ler o que foi compartilhado.'); });
 }
 if (params.has('focus')) {
   input.focus();

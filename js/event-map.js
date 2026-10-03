@@ -25,7 +25,7 @@ function nextDay(date) {
 }
 
 export function buildEvent(task, settings, { timeZone = 'America/Sao_Paulo', appUrl = '', projectName = '' } = {}) {
-  if (!task.date || task.deleted) return null;
+  if (!task.date || task.deleted || task.noCalendar) return null;
 
   const isAppointment = task.kind === 'compromisso';
   const done = task.status === 'feita';

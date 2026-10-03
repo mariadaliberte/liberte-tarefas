@@ -1,3 +1,5 @@
+import { firstOccurrence } from './recurrence.js';
+
 // Interpreta frases em português e extrai data, hora, prioridade e responsável.
 // Ex.: "Reunião com fornecedor sexta às 15h urgente @Ana"
 //   -> { title: "Reunião com fornecedor", date: "2026-10-02", time: "15:00",
@@ -69,7 +71,7 @@ export function parseTask(rawText, options = {}) {
   const spans = [];
   const result = {
     title: '', date: null, time: null, priority: null, assignee: null,
-    kind: 'tarefa', deadline: false, project: null,
+    kind: 'tarefa', deadline: false, project: null, recurrence: null,
   };
 
   const take = (match, start = match.index, end = match.index + match[0].length) => {
@@ -90,6 +92,35 @@ export function parseTask(rawText, options = {}) {
   // ---- Prefixos tipo "me lembra de", "lembrete:" ----
   let m = find(/^\s*(?:me\s+)?(?:lembr(?:a|e|ar)(?:-me)?|lembrete)\s*(?:de|que|:)?\s+/);
   if (m) take(m);
+
+  // ---- Repetição ("todo dia 20", "toda segunda e quarta", "dias úteis"...) ----
+  const WD = '(segunda|terca|quarta|quinta|sexta|sabado|domingo)s?(?:-feiras?)?';
+  const recRules = [
+    [/\b(?:todo|todos os|toda|todas as|em todos os|nos)\s+(?:o\s+)?dias?\s+uteis\b|\bde\s+segunda\s+a\s+sexta\b|\bdias\s+uteis\b/, () => ({ freq: 'uteis' })],
+    [/\b(?:todo|todos os|toda)\s+(?:o\s+)?ultimo\s+dia\s+util(?:\s+do\s+mes)?\b/, () => ({ freq: 'mensal', monthDay: 'ultimo-util' })],
+    [/\b(?:todo|todos os|toda)\s+(?:o\s+)?ultimo\s+dia(?:\s+do\s+mes)?\b/, () => ({ freq: 'mensal', monthDay: 'ultimo' })],
+    [/\b(?:todo|todos os)\s+(?:o\s+)?dias?\s+(\d{1,2})(?:\s+(?:de\s+cada|do)\s+mes)?\b/, (m) => ({ freq: 'mensal', monthDay: Number(m[1]) })],
+    [/\btodo\s+mes(?:\s+(?:no\s+)?dia\s+(\d{1,2}))?\b|\bmensalmente\b/, (m) => ({ freq: 'mensal', monthDay: m[1] ? Number(m[1]) : null })],
+    [new RegExp(`\\b(?:toda|todas as|todo|todos os|as|nas|aos)\\s+${WD}(?:(?:\\s*,\\s*|\\s+e\\s+)${WD})*\\b`), (m) => ({
+      freq: 'semanal',
+      days: [...new Set([...m[0].matchAll(/(segunda|terca|quarta|quinta|sexta|sabado|domingo)/g)].map((x) => WEEKDAYS[x[1]]))].sort(),
+    })],
+    [/\bsemanalmente\b|\btoda\s+semana\b/, () => ({ freq: 'semanal', days: null })],
+    [/\b(?:todo\s+dia|todos\s+os\s+dias|diariamente)\b(?!\s+\d)/, () => ({ freq: 'diaria' })],
+    [/\b(?:todo\s+ano|todos\s+os\s+anos|anualmente)\b/, () => ({ freq: 'anual' })],
+    [/\ba\s+cada\s+(\d{1,3})\s+(dias|semanas|meses)\b/, (m) => ({ freq: m[2] === 'dias' ? 'diaria' : m[2] === 'semanas' ? 'semanal' : 'mensal', interval: Number(m[1]), days: null, monthDay: null })],
+  ];
+  // "toda(s) as segundas" exige um marcador de repetição; "as segundas" sozinho só vale com "toda".
+  for (const [re, make] of recRules) {
+    m = find(re);
+    if (!m) continue;
+    if (/^(?:as|nas|aos)\s/.test(m[0]) && !/\b(?:toda|todas|todo|todos)\s*$/.test(folded.slice(0, m.index))) continue;
+    const rec = make(m);
+    for (const k of Object.keys(rec)) if (rec[k] == null) delete rec[k];
+    result.recurrence = rec;
+    take(m);
+    break;
+  }
 
   // ---- Prioridade ----
   const priorities = [
@@ -287,6 +318,18 @@ export function parseTask(rawText, options = {}) {
     const [h, mi] = result.time.split(':').map(Number);
     const at = new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, mi);
     if (at < now) date = addDays(today, 1);
+  }
+  if (result.recurrence) {
+    const r = result.recurrence;
+    const ref = date ? formatDate(date) : formatDate(today);
+    if (r.freq === 'mensal' && r.monthDay == null) r.monthDay = Number(ref.slice(8, 10));
+    if (r.freq === 'semanal' && !r.days) {
+      const [y, mo, d] = ref.split('-').map(Number);
+      r.days = [new Date(y, mo - 1, d).getDay()];
+    }
+    const first = firstOccurrence(r, ref);
+    const [y, mo, d] = first.split('-').map(Number);
+    date = new Date(y, mo - 1, d);
   }
   if (date) result.date = formatDate(date);
 

@@ -1,3 +1,5 @@
+import { nextOccurrence } from './recurrence.js';
+
 // Armazenamento local: tarefas e configurações no localStorage,
 // fotos e áudios no IndexedDB (cabe muito mais que o localStorage).
 
@@ -24,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   autoSaveDictation: true,
   localNotifications: false,
   inviteAssignee: true,
+  focusEnabled: true,
+  focusTime: '08:00',
   people: [],
   lastSyncAt: null,
 };
@@ -131,7 +135,36 @@ export function toggleDone(id) {
   const task = getTask(id);
   if (!task) return null;
   const done = task.status !== 'feita';
+  // Recorrente: guarda a conclusão no histórico e a tarefa segue para a próxima data.
+  if (done && task.recurrence) {
+    const now = new Date().toISOString();
+    const base = task.date || now.slice(0, 10);
+    tasks.unshift({
+      ...task, id: uid(), status: 'feita', doneAt: now, recurrence: null, seriesId: task.id,
+      calendar: null, noCalendar: true, attachments: [], createdAt: now, updatedAt: now,
+    });
+    const next = nextOccurrence(task.recurrence, base);
+    const shift = (d) => {
+      if (!d || !task.date) return null;
+      const diff = Math.round((Date.parse(`${next}T12:00`) - Date.parse(`${task.date}T12:00`)) / 86_400_000);
+      const dt = new Date(`${d}T12:00`);
+      dt.setDate(dt.getDate() + diff);
+      return dt.toISOString().slice(0, 10);
+    };
+    return updateTask(id, {
+      date: next,
+      startDate: shift(task.startDate),
+      checklist: (task.checklist || []).map((c) => ({ ...c, done: false })),
+      lastDoneAt: now,
+    });
+  }
   return updateTask(id, { status: done ? 'feita' : 'aberta', doneAt: done ? new Date().toISOString() : null });
+}
+
+// ---- Checklist ----
+
+export function setChecklist(id, checklist) {
+  return updateTask(id, { checklist });
 }
 
 // Mescla dados vindos de outro aparelho (via Google Drive): vence a edição mais recente.
@@ -342,7 +375,8 @@ export function getSettings() {
 // Ajustes compartilhados entre aparelhos (o resto é de cada aparelho).
 const SYNCED_SETTINGS = [
   'people', 'calendarId', 'calendarName', 'defaultTaskTime', 'appointmentMinutes',
-  'appointmentReminders', 'taskReminders', 'inviteAssignee', 'templateId', 'templateDriveId',
+  'appointmentReminders', 'taskReminders', 'inviteAssignee', 'templateId', 'templateDriveId', 'projectTemplates',
+  'focusEnabled', 'focusTime',
 ];
 
 export function notify(reason) {

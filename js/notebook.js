@@ -5,6 +5,8 @@
 // - Minha folha: o modelo de folha da própria usuária (imagem ou PDF) vira o fundo
 //   onde ela escreve; também aceita enviar uma página já preenchida em outro app.
 
+import { readTasksFromImage } from './ai-read.js';
+
 const DRAFT_KEY = 'lt.notebook.draft';
 const LINE = 40; // altura da pauta, em px (igual ao CSS)
 const TEMPLATE_ID = 'nb-template';
@@ -561,6 +563,32 @@ export function initNotebook(deps) {
     redraw(ctx, cssW, cssH);
     $('#nbDrawTitle').value = '';
     saveImages([att], typed, `${label} de ${stamp()}`);
+  });
+
+  // ---------- Ler com IA: a letra de mão vira linhas de tarefa para conferir ----------
+  const aiBtn = $('#nbAiRead');
+  aiBtn.addEventListener('click', async () => {
+    const blob = await exportBlob();
+    if (!blob) return toast('A folha está em branco.');
+    aiBtn.disabled = true;
+    aiBtn.textContent = 'Lendo…';
+    try {
+      const found = await readTasksFromImage(blob);
+      if (!found.length) return toast('A IA não encontrou tarefas nesta página.');
+      // O desenho continua na folha: dá para salvar a imagem também, se quiser.
+      text.value = [text.value.trim(), ...found].filter(Boolean).join('\n');
+      root.querySelector('input[name="nbMode"][value="escrever"]').checked = true;
+      setMode('escrever');
+      updatePreview();
+      toast(`A IA leu ${found.length} ${found.length === 1 ? 'tarefa' : 'tarefas'}. Confira, corrija se precisar e toque em Salvar.`, { ms: 6000 });
+    } catch (e) {
+      console.error(e);
+      if (e.noKey) deps.openSettings?.();
+      toast(e.message || 'Não consegui ler a página.', { ms: 7000 });
+    } finally {
+      aiBtn.disabled = false;
+      aiBtn.textContent = '✨ Ler com IA';
+    }
   });
 
   // ---------- Modelo da folha ----------

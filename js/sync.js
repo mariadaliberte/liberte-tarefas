@@ -3,6 +3,7 @@
 import * as store from './store.js';
 import * as g from './google.js';
 import { buildEvent, eventHash } from './event-map.js';
+import { buildFocusEvent, focusEventId } from './focus.js';
 
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
 const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
@@ -70,6 +71,7 @@ export async function syncNow() {
       await syncTemplate();
       await uploadAttachments();
       await syncCalendar();
+      await syncFocus().catch((e) => console.warn('Foco do dia:', e));
       // Só grava no Drive quando há algo novo (evita um aparelho "acordar" o outro à toa).
       const payload = store.exportData();
       lastRemoteModified = !duplicates.length && canonical(payload) === canonical(remote)
@@ -192,6 +194,51 @@ async function syncCalendar() {
   }
 }
 
+// Resumo da manhã: mantém o evento "Foco do dia" de hoje e de amanhã em dia.
+const FOCUS_KEY = 'lt.focus.v1';
+
+function ymd(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+async function syncFocus() {
+  const settings = store.getSettings();
+  const calendarId = settings.calendarId || 'primary';
+  let sent = {};
+  try { sent = JSON.parse(localStorage.getItem(FOCUS_KEY)) || {}; } catch { /* vazio */ }
+  const now = new Date();
+  const today = ymd(now);
+  const tomorrow = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+  const tasks = store.allTasks();
+  const next = {};
+  for (const date of [today, tomorrow]) {
+    const event = settings.focusEnabled === false ? null
+      : buildFocusEvent(tasks, date, { time: settings.focusTime || '08:00', timeZone, appUrl });
+    const hash = event ? `${calendarId}|${eventHash(event)}` : `${calendarId}|-`;
+    next[date] = hash;
+    if (sent[date] === hash) continue;
+    const old = sent[date]?.split('|')[0];
+    if (old && old !== calendarId) await g.deleteEvent(old, focusEventId(date));
+    if (!event) {
+      if (sent[date] !== undefined || settings.focusEnabled === false) await g.deleteEvent(calendarId, focusEventId(date));
+      continue;
+    }
+    const { id, ...body } = event;
+    try {
+      await g.patchEvent(calendarId, id, body);
+    } catch (e) {
+      if (e.status !== 404) throw e;
+      try {
+        await g.insertEvent(calendarId, event);
+      } catch (e2) {
+        if (e2.status !== 409) throw e2;
+        await g.patchEvent(calendarId, id, body); // outro aparelho criou ao mesmo tempo
+      }
+    }
+  }
+  localStorage.setItem(FOCUS_KEY, JSON.stringify(next));
+}
+
 // Eventos da agenda (os que não foram criados pelo app) entre duas datas (AAAA-MM-DD, fim exclusivo).
 export async function fetchAgenda(fromDate, toDate) {
   if (!g.hasValidToken()) return null;
@@ -208,7 +255,7 @@ export async function fetchAgenda(fromDate, toDate) {
     .catch(() => [])));
   const seen = new Set();
   return lists.flat().filter((ev) => {
-    if (ev.status === 'cancelled' || ev.extendedProperties?.private?.ltTaskId) return false;
+    if (ev.status === 'cancelled' || ev.extendedProperties?.private?.ltTaskId || ev.extendedProperties?.private?.ltFocus) return false;
     if (seen.has(ev.id)) return false;
     seen.add(ev.id);
     return true;

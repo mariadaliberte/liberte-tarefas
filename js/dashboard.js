@@ -1,6 +1,8 @@
 // Painel: resumo do dia e da semana, gráficos de acompanhamento,
 // análise automática (regras) e análise com IA (Claude, opcional).
 
+import { aiKey, askClaude } from './ai-read.js';
+
 const DAY = 86_400_000;
 const AI_CACHE_KEY = 'lt.ai.last';
 const WEEK = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -414,9 +416,7 @@ As 3 tarefas que ela deve fechar hoje, em lista.
 Baseie-se apenas nos dados recebidos. Se algo não estiver nos dados, não invente. Não repita os números brutos sem interpretá-los. Seja breve: no máximo 250 palavras.`;
 
   async function runAI() {
-    let key = null;
-    try { key = localStorage.getItem('lt.ai.key'); } catch { /* sem armazenamento */ }
-    if (!key) {
+    if (!aiKey()) {
       deps.openSettings();
       setTimeout(() => document.getElementById('aiKey')?.focus(), 200);
       return;
@@ -424,30 +424,7 @@ Baseie-se apenas nos dados recebidos. Se algo não estiver nos dados, não inven
     state.aiLoading = true;
     render();
     try {
-      const { default: Anthropic } = await import('./vendor/anthropic-sdk.js');
-      const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
-      let response;
-      try {
-        response = await client.beta.messages.create({
-          model: 'claude-opus-5-5',
-          max_tokens: 16000,
-          betas: ['server-side-fallback-2026-07-01'],
-          fallbacks: 'default',
-          output_config: { effort: 'medium' },
-          system: SYSTEM,
-          messages: [{ role: 'user', content: `Dados de hoje:\n${JSON.stringify(snapshot())}` }],
-        });
-      } catch (error) {
-        if (error instanceof Anthropic.AuthenticationError) throw new Error('Chave da API inválida. Confira em Ajustes → Análise com IA.');
-        if (error instanceof Anthropic.PermissionDeniedError) throw new Error('Sua chave não tem permissão para este modelo. Confira no console da Anthropic.');
-        if (error instanceof Anthropic.RateLimitError) throw new Error('Limite de uso atingido. Tente de novo em alguns minutos.');
-        if (error instanceof Anthropic.APIConnectionError) throw new Error('Sem conexão com a Anthropic. Verifique a internet.');
-        if (error instanceof Anthropic.APIError) throw new Error(`A IA não respondeu (erro ${error.status}). Tente de novo.`);
-        throw error;
-      }
-      if (response.stop_reason === 'refusal') throw new Error('A IA não conseguiu analisar estes dados. Tente de novo mais tarde.');
-      const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-      if (!text) throw new Error('A IA não retornou texto. Tente de novo.');
+      const text = await askClaude({ system: SYSTEM, content: `Dados de hoje:\n${JSON.stringify(snapshot())}` });
       try { localStorage.setItem(AI_CACHE_KEY, JSON.stringify({ text, at: new Date().toISOString() })); } catch { /* sem armazenamento */ }
     } catch (e) {
       console.error(e);
