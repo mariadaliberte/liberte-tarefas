@@ -123,6 +123,10 @@ export function deleteTask(id) {
   return updateTask(id, { deleted: true });
 }
 
+export function restoreTask(id) {
+  return updateTask(id, { deleted: false });
+}
+
 export function toggleDone(id) {
   const task = getTask(id);
   if (!task) return null;
@@ -155,11 +159,51 @@ export function mergeRemote(remote) {
   const n = merge(notes, data.notes);
   if (n) { notes = n; persistNotes(); changed = true; }
   if (data.settings?.updatedAt && data.settings.updatedAt > (settings.settingsUpdatedAt || '')) {
-    saveSettings({ ...data.settings.values, settingsUpdatedAt: data.settings.updatedAt }, { fromRemote: true });
+    // Pessoas: junta as listas (quem foi cadastrado em qualquer aparelho permanece).
+    const people = mergePeople(data.settings.values.people || [], settings.people || []);
+    saveSettings({ ...data.settings.values, people, settingsUpdatedAt: data.settings.updatedAt }, { fromRemote: true });
     changed = true;
+  } else if (data.settings?.values?.people) {
+    const people = mergePeople(settings.people || [], data.settings.values.people);
+    if (people.length !== (settings.people || []).length) {
+      saveSettings({ people });
+      changed = true;
+    }
   }
   if (changed) emit('change');
   return changed;
+}
+
+// União por nome (sem diferenciar maiúsculas); a primeira lista tem prioridade no e-mail.
+export function mergePeople(primary, secondary) {
+  const out = [...primary];
+  const seen = new Set(primary.map((p) => p.name.toLowerCase()));
+  for (const p of secondary) {
+    if (!seen.has(p.name.toLowerCase())) {
+      out.push(p);
+      seen.add(p.name.toLowerCase());
+    } else if (p.email) {
+      const i = out.findIndex((x) => x.name.toLowerCase() === p.name.toLowerCase());
+      if (!out[i].email) out[i] = { ...out[i], email: p.email };
+    }
+  }
+  return out;
+}
+
+// Registros de exclusão servem para avisar os outros aparelhos; depois de 120 dias
+// já foram propagados e só aumentam o arquivo. Devolve os anexos a apagar do aparelho.
+export function purgeTombstones(now = Date.now(), days = 120) {
+  const limit = new Date(now - days * 86_400_000).toISOString();
+  const old = (x) => x.deleted && (x.updatedAt || '') < limit;
+  const files = [...tasks, ...notes].filter(old).flatMap((x) => (x.attachments || []).map((a) => a.id));
+  const before = tasks.length + notes.length + projects.length;
+  tasks = tasks.filter((x) => !old(x));
+  notes = notes.filter((x) => !old(x));
+  projects = projects.filter((x) => !old(x));
+  if (tasks.length + notes.length + projects.length !== before) {
+    persist(); persistNotes(); persistProjects();
+  }
+  return files;
 }
 
 // Dados de integração (evento da Agenda, arquivo no Drive) são gravados sem mudar
