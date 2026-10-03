@@ -1,0 +1,14 @@
+{
+  "name": "liberte-servidor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute liberte --remote --file=schema.sql",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}

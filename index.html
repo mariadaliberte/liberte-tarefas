@@ -151,6 +151,7 @@
         </div>
         <div class="row nb-save-row">
           <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
+          <button type="button" id="nbAiRead" class="btn ghost" title="A IA lê o que você escreveu à mão e transforma em tarefas">✨ Ler com IA</button>
           <button type="button" id="nbSaveDrawing" class="btn primary">Salvar como tarefa</button>
         </div>
       </div>
@@ -209,6 +210,28 @@
         <label class="field"><span>E-mail (convida na agenda)</span><input type="email" name="assigneeEmail" placeholder="opcional"></label>
       </div>
       <datalist id="peopleList"></datalist>
+      <div class="field checklist-field">
+        <span>Checklist</span>
+        <ul id="checklist" class="checklist"></ul>
+        <div class="checklist-add">
+          <input id="checklistInput" placeholder="Adicionar item e tecle Enter" aria-label="Novo item do checklist">
+          <button type="button" id="checklistAdd" class="btn small ghost">Adicionar</button>
+        </div>
+      </div>
+      <label class="field">
+        <span>Repetir</span>
+        <select name="repeat">
+          <option value="">Não repete</option>
+          <option value="diaria">Todo dia</option>
+          <option value="uteis">Dias úteis (segunda a sexta)</option>
+          <option value="semanal">Toda semana (no mesmo dia)</option>
+          <option value="mensal">Todo mês (no mesmo dia)</option>
+          <option value="mensal-ultimo">Último dia do mês</option>
+          <option value="mensal-ultimo-util">Último dia útil do mês</option>
+          <option value="anual">Todo ano</option>
+          <option value="custom" id="repeatCustom" hidden>Personalizado</option>
+        </select>
+      </label>
       <label class="field">
         <span>Lembretes</span>
         <select name="reminders">
@@ -302,6 +325,12 @@
 
       <h3>Google Agenda e Drive</h3>
       <p id="googleState" class="muted small"></p>
+      <div id="serverBox" class="server-box" hidden>
+        <p class="small" id="serverState"></p>
+        <p class="small">Link para a equipe (cada pessoa entra com o Google do e-mail cadastrado em Pessoas):
+          <a id="teamLink" target="_blank" rel="noopener"></a>
+          <button type="button" id="copyTeamLink" class="btn small ghost">Copiar</button></p>
+      </div>
       <div class="row">
         <button type="button" id="connectBtn" class="btn primary">Conectar Google</button>
         <button type="button" id="syncBtn" class="btn ghost">Sincronizar agora</button>
@@ -328,6 +357,8 @@
       </div>
       <p class="muted small">Automático segue o modo claro/escuro do aparelho. Vale só para este aparelho.</p>
 
+      <label class="check"><input type="checkbox" id="kanbanToggle"> Mostrar o quadro Kanban (A fazer / Fazendo / Feito) na aba Tudo</label>
+
       <h3>Análise com IA (Claude)</h3>
       <label class="field">
         <span>Chave da API da Anthropic</span>
@@ -342,6 +373,11 @@
       </div>
       <label class="check"><input type="checkbox" name="inviteAssignee"> Convidar o responsável no Google Agenda (quando tiver e-mail)</label>
       <label class="check"><input type="checkbox" name="autoSaveDictation"> Salvar automaticamente quando terminar de falar</label>
+      <div class="grid2 focus-row">
+        <label class="check"><input type="checkbox" name="focusEnabled"> Resumo da manhã (“Foco do dia”)</label>
+        <label class="field"><span>Horário do resumo</span><input type="time" name="focusTime"></label>
+      </div>
+      <p class="muted small">Todo dia cria no Google Agenda um aviso com as tarefas atrasadas, do dia e em andamento. O celular notifica pelo app do Google Agenda, mesmo com o Liberte fechado.</p>
       <div class="row">
         <button type="button" id="notifyBtn" class="btn ghost">Ativar notificações neste aparelho</button>
       </div>
@@ -372,6 +408,10 @@
         <strong id="projectDialogTitle">Novo projeto</strong>
         <button type="submit" class="link strong">Salvar</button>
       </div>
+      <label class="field" id="templateField"><span>Começar a partir de um modelo</span>
+        <select name="template" id="templateSelect"></select>
+      </label>
+      <p class="muted small" id="templateHint"></p>
       <label class="field"><span>Nome do projeto</span><input name="name" required placeholder="Ex.: Lançamento da Mentoria Fluir"></label>
       <label class="field"><span>Objetivo ou descrição</span><textarea name="description" rows="3" placeholder="Opcional"></textarea></label>
       <div class="grid2">
@@ -381,8 +421,12 @@
       <div class="field"><span>Cor</span><div id="projectColors" class="color-choices"></div></div>
       <label class="check" id="archiveRow"><input type="checkbox" name="archived"> Arquivar (projeto encerrado)</label>
       <p class="muted small">Dica: escreva <b>#nome-do-projeto</b> em qualquer tarefa para colocá-la no projeto.</p>
-      <div class="sheet-actions">
-        <button type="button" id="deleteProjectBtn" class="btn danger ghost">Excluir projeto</button>
+      <div class="row">
+        <button type="button" id="saveTemplateBtn" class="btn ghost small">Salvar este projeto como modelo</button>
+        <button type="button" id="deleteTemplateBtn" class="btn ghost small" hidden>Excluir modelo selecionado</button>
+      </div>
+      <div class="danger-zone">
+        <button type="button" id="deleteProjectBtn" class="link danger">Excluir projeto</button>
       </div>
     </form>
   </dialog>

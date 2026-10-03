@@ -2,6 +2,7 @@
 // Linhas de uma anotação podem virar tarefas do projeto.
 
 import { buildTimeline } from './timeline.js';
+import { BUILTIN_TEMPLATES, instantiate, fromProject } from './templates.js';
 
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const WEEK = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
@@ -315,9 +316,54 @@ export function initProjects(deps) {
       </label>`).join('');
   }
 
+  function allTemplates() {
+    return [...BUILTIN_TEMPLATES, ...(store.getSettings().projectTemplates || [])];
+  }
+
+  function renderTemplateSelect() {
+    const mine = store.getSettings().projectTemplates || [];
+    $('#templateSelect').innerHTML = `<option value="">Em branco</option>
+      <optgroup label="Modelos prontos">${BUILTIN_TEMPLATES.map((t) => `<option value="${t.id}">${esc(t.name)} (${t.tasks.length} tarefas)</option>`).join('')}</optgroup>
+      ${mine.length ? `<optgroup label="Meus modelos">${mine.map((t) => `<option value="${esc(t.id)}">${esc(t.name)} (${t.tasks.length} tarefas)</option>`).join('')}</optgroup>` : ''}`;
+    updateTemplateHint();
+  }
+
+  function updateTemplateHint() {
+    const tpl = allTemplates().find((t) => t.id === $('#templateSelect').value);
+    $('#templateHint').textContent = tpl
+      ? `${tpl.description} As tarefas são criadas com prazos contados a partir do início do projeto.`
+      : '';
+    $('#deleteTemplateBtn').hidden = !tpl || !String(tpl.id).startsWith('meu-');
+    if (tpl && !projectForm.name.value.trim()) projectForm.name.value = tpl.name;
+  }
+  $('#templateSelect').addEventListener('change', updateTemplateHint);
+
+  $('#saveTemplateBtn').addEventListener('click', () => {
+    const p = store.getProject(editingProjectId);
+    if (!p) return;
+    const tpl = fromProject(p, store.projectTasks(p.id), p.name);
+    const list = [...(store.getSettings().projectTemplates || []), tpl];
+    store.saveSettings({ projectTemplates: list });
+    sync.scheduleSync();
+    toast(`Modelo “${tpl.name}” salvo com ${tpl.tasks.length} tarefas.`);
+  });
+
+  $('#deleteTemplateBtn').addEventListener('click', async () => {
+    const id = $('#templateSelect').value;
+    const tpl = (store.getSettings().projectTemplates || []).find((t) => t.id === id);
+    if (!tpl || !(await ask(`Excluir o modelo “${tpl.name}”? Projetos já criados não mudam.`, 'Excluir'))) return;
+    store.saveSettings({ projectTemplates: store.getSettings().projectTemplates.filter((t) => t.id !== id) });
+    sync.scheduleSync();
+    renderTemplateSelect();
+  });
+
   function openProject(id) {
     editingProjectId = id;
     const p = id ? store.getProject(id) : null;
+    $('#templateField').hidden = !!p;
+    $('#saveTemplateBtn').hidden = !p;
+    if (!p) renderTemplateSelect();
+    else { $('#templateHint').textContent = ''; $('#deleteTemplateBtn').hidden = true; }
     projectForm.name.value = p?.name || '';
     projectForm.description.value = p?.description || '';
     projectForm.archived.checked = p?.status === 'arquivado';
@@ -345,9 +391,20 @@ export function initProjects(deps) {
       // O nome do projeto vai na descrição dos eventos: a sincronização atualiza a Agenda.
       store.updateProject(editingProjectId, data);
     } else {
+      const tpl = allTemplates().find((t) => t.id === projectForm.template.value);
+      const start = data.startDate || todayStr();
+      if (tpl) {
+        const { endDate } = instantiate(tpl, start);
+        data.startDate = start;
+        data.endDate = data.endDate || endDate;
+      }
       const p = store.createProject(data);
+      if (tpl) {
+        for (const t of instantiate(tpl, start).tasks) store.createTask({ ...t, projectId: p.id, assigneeEmail: store.personEmail(t.assignee), source: 'modelo' });
+        toast(`Projeto criado com ${tpl.tasks.length} tarefas do modelo.`);
+      }
       state.projectId = p.id;
-      state.projectTab = 'tarefas';
+      state.projectTab = tpl ? 'cronograma' : 'tarefas';
     }
     sync.scheduleSync();
     projectDialog.close();
