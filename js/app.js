@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import * as g from './google.js';
 import * as sync from './sync.js';
-import { parseTask, formatDate } from './parser.js';
+import { formatDate } from './parser.js';
 import { CONFIG } from './config.js';
 import { initNotebook, fileToImages } from './notebook.js';
 import { initProjects } from './projects.js';
@@ -11,6 +11,7 @@ import * as recur from './recurrence.js';
 import { enableDrag, isDragging } from './drag.js';
 import { readTasksFromImage } from './ai-read.js';
 import * as smart from './smart.js';
+import { understandOne } from './understand.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -620,7 +621,7 @@ async function loadAgenda(force = false) {
 const input = $('#captureInput');
 
 function parseInput(text) {
-  return parseTask(text, {
+  return understandOne(text, {
     knownPeople: store.knownPeople(),
     knownProjects: store.allProjects({ includeArchived: false }).map((p) => p.name),
   });
@@ -661,6 +662,8 @@ function createFromText(text, extra = {}) {
     assignee: p.assignee,
     assigneeEmail: store.personEmail(p.assignee),
     recurrence: p.recurrence,
+    notes: p.notes || '',
+    checklist: (p.checklist || []).map((t) => ({ id: store.uid(), text: t, done: false })),
     ...extra,
     // "#projeto" escrito no texto vale mais que o projeto aberto na tela.
     projectId: projectIdByName(p.project) || extra.projectId || null,
@@ -702,15 +705,10 @@ async function submitCapture(source = 'texto') {
   if (!text) return;
   input.value = '';
   updatePreview();
+  // Sem IA (padrão, gratuito): o próprio app entende o pedido e separa vários pedidos numa fala.
   if (!smart.worthAI(text, source)) {
-    const task = createFromText(text, { source, projectId: currentProjectId() });
-    announceCreated([task], false);
-    // Falou e a IA não está ligada neste aparelho: avisa (uma vez por dia) como ligar.
-    const today = new Date().toDateString();
-    if (source === 'voz' && !smart.smartEnabled() && localGet('lt.smart.hint') !== today) {
-      localSet('lt.smart.hint', today);
-      setTimeout(() => toast('Dica: para a IA entender seus pedidos (quem, prazo, prioridade), cadastre a chave em Ajustes → Análise com IA. Toque aqui.', { action: openSettings, ms: 9000 }), 4000);
-    }
+    const { tasks } = await smart.smartCreate({ text, source, projectId: currentProjectId(), useAI: false });
+    announceCreated(tasks, tasks.length > 1 || source === 'voz');
     return;
   }
   setThinking(1);

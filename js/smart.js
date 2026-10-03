@@ -4,7 +4,7 @@
 // Sem chave de IA ou sem internet, cai no interpretador simples — nada se perde.
 
 import * as store from './store.js';
-import { parseTask } from './parser.js';
+import { understand } from './understand.js';
 import { firstOccurrence } from './recurrence.js';
 import { aiKey, askClaude } from './ai-read.js';
 
@@ -172,16 +172,16 @@ export async function interpret({ text = '', image = null }) {
   return (data.tarefas || []).map((t) => toTaskData(t, ctx));
 }
 
-// Interpretador simples (sem IA), no mesmo formato.
+// Entendedor gratuito (sem IA, no próprio aparelho), no mesmo formato.
 export function interpretLocal(text) {
-  const p = parseTask(text, {
+  return understand(text, {
     knownPeople: store.knownPeople(),
     knownProjects: store.allProjects({ includeArchived: false }).map((x) => x.name),
-  });
-  return [{
-    title: p.title, notes: '', kind: p.kind, date: p.date, time: p.time, deadline: p.deadline,
-    priority: p.priority || 'normal', assignee: p.assignee, projectName: p.project, recurrence: p.recurrence, checklist: [],
-  }];
+  }).map((p) => ({
+    title: p.title, notes: p.notes || '', kind: p.kind, date: p.date, time: p.time, deadline: p.deadline,
+    priority: p.priority || 'normal', assignee: p.assignee, projectName: p.project, recurrence: p.recurrence,
+    checklist: (p.checklist || []).map((t) => ({ id: store.uid(), text: t, done: false })),
+  }));
 }
 
 // Cria as tarefas no app a partir dos dados interpretados.
@@ -205,13 +205,13 @@ export function createTasks(list, { source, attachments = [], projectId = null, 
 
 // Pedido completo: tenta a IA; se falhar, usa o interpretador simples.
 // Enquanto a IA pensa, o pedido fica guardado no aparelho para não se perder se o app fechar.
-export async function smartCreate({ text = '', image = null, source = 'texto', attachments = [], projectId = null, firstId = null, extraNotes = '' }) {
+export async function smartCreate({ text = '', image = null, source = 'texto', attachments = [], projectId = null, firstId = null, extraNotes = '', useAI = true }) {
   const pendingId = store.uid();
   savePending(pendingId, { text, source, projectId, attachments, at: Date.now() });
   try {
     let list = null;
     let usedAI = false;
-    if (smartEnabled() && (text.trim() || image)) {
+    if (useAI && smartEnabled() && (text.trim() || image)) {
       try {
         list = await interpret({ text, image });
         usedAI = true;
@@ -222,7 +222,7 @@ export async function smartCreate({ text = '', image = null, source = 'texto', a
     if (!list || (!list.length && !attachments.length && text.trim())) list = text.trim() ? interpretLocal(text) : [];
     if (!list.length) list = [{ title: image ? 'Foto recebida' : 'Nova tarefa', notes: '', kind: 'tarefa', date: null, time: null, deadline: false, priority: 'normal', assignee: null, projectName: null, recurrence: null, checklist: [] }];
     // Fala longa vira título resumido; o original vai para os detalhes.
-    const original = usedAI && text.trim().split(/\s+/).length > 6 ? text.trim() : '';
+    const original = text.trim().split(/\s+/).length > 10 ? text.trim() : '';
     const tasks = createTasks(list, { source, attachments, projectId, original, firstId, extraNotes });
     return { tasks, usedAI };
   } finally {

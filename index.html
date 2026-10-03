@@ -359,13 +359,14 @@
 
       <label class="check"><input type="checkbox" id="kanbanToggle"> Mostrar o quadro Kanban (A fazer / Fazendo / Feito) na aba Tudo</label>
 
-      <h3>Análise com IA (Claude)</h3>
+      <h3>IA da Anthropic (opcional, paga)</h3>
       <label class="field">
         <span>Chave da API da Anthropic</span>
         <input id="aiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
-      <label class="check"><input type="checkbox" id="smartToggle"> Entender pedidos com IA (voz, fotos, textos longos e WhatsApp): a IA identifica a tarefa, o responsável, o prazo e a prioridade</label>
-      <p class="muted small">Usada também no Painel, quando você pede uma análise. Fica guardada apenas neste aparelho (não vai para o Drive). Crie em console.anthropic.com → API Keys e defina um limite de gasto mensal por lá. Cada análise custa poucos centavos.</p>
+      <p class="muted small"><b>Opcional e pago.</b> Sem chave, o app já entende seus pedidos por conta própria, de graça e sem internet: "cria uma tarefa pra Ana, prazo sexta, a tarefa é…".</p>
+      <label class="check"><input type="checkbox" id="smartToggle"> Com chave: usar a IA também para entender pedidos e ler fotos</label>
+      <p class="muted small">Usada no Painel, quando você pede uma análise. Fica guardada apenas neste aparelho (não vai para o Drive). Crie em console.anthropic.com → API Keys e defina um limite de gasto mensal por lá. Cada análise custa poucos centavos.</p>
 
       <h3>Lembretes</h3>
       <div class="grid2">

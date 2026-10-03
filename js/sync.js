@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as g from './google.js';
 import { buildEvent, eventHash } from './event-map.js';
 import { buildFocusEvent, focusEventId } from './focus.js';
-import { parseTask, formatDate } from './parser.js';
+import { formatDate } from './parser.js';
 import * as smart from './smart.js';
 
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
@@ -326,21 +326,11 @@ async function pullInbox() {
     const when = new Date(it.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const notes = it.sender ? `Recebido de ${it.sender} em ${when}.` : `Recebido em ${when}.`;
     const imgAtt = attachments.find((a) => a.type === 'image');
-    if (smart.smartEnabled() && (it.text || imgAtt)) {
-      // A IA entende o pedido (quem, o quê, quando) em vez de copiar a mensagem inteira.
-      const image = imgAtt ? await store.getFile(imgAtt.id) : null;
+    if (it.text || (imgAtt && smart.smartEnabled())) {
+      // Entende o pedido (quem, o quê, quando) em vez de copiar a mensagem inteira.
+      // Sem chave de IA, usa o entendedor gratuito do próprio app.
+      const image = imgAtt && smart.smartEnabled() ? await store.getFile(imgAtt.id) : null;
       await smart.smartCreate({ text: it.text || '', image, source: 'entrada', attachments, firstId: taskId, extraNotes: notes });
-    } else if (it.text) {
-      const p = parseTask(it.text, {
-        knownPeople: store.knownPeople(),
-        knownProjects: store.allProjects({ includeArchived: false }).map((x) => x.name),
-      });
-      store.createTask({
-        title: p.title, kind: p.kind, date: p.date, time: p.time, deadline: p.deadline, priority: p.priority || 'normal',
-        assignee: p.assignee, assigneeEmail: store.personEmail(p.assignee), recurrence: p.recurrence,
-        projectId: p.project ? store.allProjects().find((x) => x.name === p.project)?.id || null : null,
-        notes, attachments, source: 'entrada', id: taskId,
-      });
     } else {
       const kind = attachments[0]?.type === 'audio' ? 'Áudio' : attachments[0]?.type === 'image' ? 'Foto' : 'Arquivo';
       store.createTask({ title: `${kind} recebido ${when}`, notes, attachments, source: 'entrada', id: taskId });
