@@ -768,3 +768,13 @@ figure .ai-read { display: block; margin-top: 6px; }
 .focus-row { align-items: center; }
 .server-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0; background: var(--bg); }
 .server-box a { overflow-wrap: anywhere; }
+
+/* IA entendendo o pedido */
+#captureForm.thinking { position: relative; }
+#captureForm.thinking::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--brand), transparent); background-size: 200% 100%;
+  animation: lt-thinking 1.2s linear infinite;
+}
+@keyframes lt-thinking { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { #captureForm.thinking::after { animation: none; background: var(--brand); } }

@@ -10,6 +10,7 @@ import { initDashboard } from './dashboard.js';
 import * as recur from './recurrence.js';
 import { enableDrag, isDragging } from './drag.js';
 import { readTasksFromImage } from './ai-read.js';
+import * as smart from './smart.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -668,14 +669,57 @@ function createFromText(text, extra = {}) {
   return task;
 }
 
-function submitCapture(source = 'texto') {
+function taskSummary(t) {
+  const bits = [];
+  if (t.assignee) bits.push(t.assignee);
+  if (t.date) bits.push(`${t.deadline ? 'até ' : ''}${dateLabel(t.date)}${t.time ? ` ${t.time}` : ''}`);
+  if (t.priority === 'urgente' || t.priority === 'alta') bits.push(store.PRIORITIES[t.priority].label.toLowerCase());
+  if (t.recurrence) bits.push(recur.describe(t.recurrence));
+  return `${t.title}${bits.length ? ` (${bits.join(', ')})` : ''}`;
+}
+
+// Aviso do que foi criado: com IA, mostra como o pedido foi entendido.
+function announceCreated(tasks, usedAI) {
+  sync.scheduleSync();
+  if (!tasks.length) return;
+  const head = usedAI ? '✨ Entendi: ' : 'Salvo: ';
+  if (tasks.length === 1) {
+    toast(`${head}${taskSummary(tasks[0])} — toque para editar`, { action: () => openTask(tasks[0].id), ms: 7000 });
+  } else {
+    toast(`${head}${tasks.length} tarefas — ${tasks.map((t) => t.title).join(' · ')}`, { action: () => openTask(tasks[0].id), ms: 8000 });
+  }
+}
+
+let thinking = 0;
+function setThinking(delta) {
+  thinking += delta;
+  $('#captureForm').classList.toggle('thinking', thinking > 0);
+  if (thinking > 0) toast('✨ Entendendo seu pedido…', { ms: 30000 });
+}
+
+async function submitCapture(source = 'texto') {
   const text = input.value.trim();
   if (!text) return;
-  const task = createFromText(text, { source, projectId: currentProjectId() });
   input.value = '';
   updatePreview();
-  const when = task.date ? ` · ${dateLabel(task.date)}${task.time ? ` ${task.time}` : ''}` : '';
-  toast(`Salvo: ${task.title}${when} — toque para editar`, { action: () => openTask(task.id) });
+  if (!smart.worthAI(text, source)) {
+    const task = createFromText(text, { source, projectId: currentProjectId() });
+    announceCreated([task], false);
+    // Falou e a IA não está ligada neste aparelho: avisa (uma vez por dia) como ligar.
+    const today = new Date().toDateString();
+    if (source === 'voz' && !smart.smartEnabled() && localGet('lt.smart.hint') !== today) {
+      localSet('lt.smart.hint', today);
+      setTimeout(() => toast('Dica: para a IA entender seus pedidos (quem, prazo, prioridade), cadastre a chave em Ajustes → Análise com IA. Toque aqui.', { action: openSettings, ms: 9000 }), 4000);
+    }
+    return;
+  }
+  setThinking(1);
+  try {
+    const { tasks, usedAI } = await smart.smartCreate({ text, source, projectId: currentProjectId() });
+    announceCreated(tasks, usedAI);
+  } finally {
+    setThinking(-1);
+  }
 }
 
 input.addEventListener('input', updatePreview);
@@ -716,13 +760,25 @@ $('#photoInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
-  const att = await makeAttachment(await compressImage(file), 'image');
+  const image = await compressImage(file);
+  const att = await makeAttachment(image, 'image');
   const text = input.value.trim();
-  const task = text
-    ? createFromText(text, { attachments: [att], source: 'foto' })
-    : store.createTask({ title: `Foto de ${stamp()}`, attachments: [att], source: 'foto' });
   input.value = '';
   updatePreview();
+  if (smart.smartEnabled()) {
+    // A IA olha a foto (print, bilhete, quadro) e o que você digitou junto, e monta as tarefas.
+    setThinking(1);
+    try {
+      const { tasks, usedAI } = await smart.smartCreate({ text, image, source: 'foto', attachments: [att], projectId: currentProjectId() });
+      announceCreated(tasks, usedAI);
+    } finally {
+      setThinking(-1);
+    }
+    return;
+  }
+  const task = text
+    ? createFromText(text, { attachments: [att], source: 'foto', projectId: currentProjectId() })
+    : store.createTask({ title: `Foto de ${stamp()}`, attachments: [att], source: 'foto', projectId: currentProjectId() });
   sync.scheduleSync();
   openTask(task.id, { focusTitle: !text });
 });
@@ -752,9 +808,22 @@ async function receiveShared() {
     }
     const text = sh.text?.trim();
     const kind = attachments.some((a) => a.type === 'audio') ? 'Áudio' : attachments.some((a) => a.type === 'image') ? 'Foto' : 'Arquivo';
-    last = text
-      ? createFromText(text, { attachments, source: 'compartilhada' })
-      : store.createTask({ title: `${kind} compartilhado em ${stamp()}`, attachments, source: 'compartilhada' });
+    const imgAtt = attachments.find((a) => a.type === 'image');
+    if (smart.smartEnabled() && (text || imgAtt)) {
+      setThinking(1);
+      try {
+        const image = imgAtt ? await store.getFile(imgAtt.id) : null;
+        const { tasks, usedAI } = await smart.smartCreate({ text: text || '', image, source: 'compartilhada', attachments });
+        announceCreated(tasks, usedAI);
+        last = null;
+      } finally {
+        setThinking(-1);
+      }
+    } else {
+      last = text
+        ? createFromText(text, { attachments, source: 'compartilhada' })
+        : store.createTask({ title: `${kind} compartilhado em ${stamp()}`, attachments, source: 'compartilhada' });
+    }
     for (const f of sh.files) await cache.delete(f.key);
   }
   await cache.delete('share/meta');
@@ -1594,6 +1663,7 @@ function openSettings() {
   f.theme.value = localGet('lt.theme') || 'auto';
   $('#kanbanToggle').checked = localGet('lt.kanban') === '1';
   $('#aiKey').value = localGet('lt.ai.key') || '';
+  $('#smartToggle').checked = localGet('lt.smart.off') !== '1';
   const editor = $('#peopleEditor');
   editor.innerHTML = '';
   s.people.forEach((p) => editor.appendChild(personRow(p)));
@@ -1649,6 +1719,7 @@ settingsForm.addEventListener('submit', (e) => {
   localSet('lt.kanban', $('#kanbanToggle').checked ? '1' : '');
   render();
   localSet('lt.ai.key', $('#aiKey').value.trim());
+  localSet('lt.smart.off', $('#smartToggle').checked ? '' : '1');
   // Atualiza e-mails das tarefas abertas de quem ganhou e-mail agora.
   for (const t of store.allTasks()) {
     const email = store.personEmail(t.assignee);
@@ -1891,6 +1962,8 @@ if (params.has('focus')) {
 }
 
 applyTheme(localGet('lt.theme') || 'auto');
+// Pedidos que ficaram pela metade (app fechado enquanto a IA pensava) não se perdem.
+if (smart.recoverPending().length) sync.scheduleSync();
 {
   // Abre na última aba usada (na primeira vez, no Painel).
   const last = localGet('lt.view');

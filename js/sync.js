@@ -5,6 +5,7 @@ import * as g from './google.js';
 import { buildEvent, eventHash } from './event-map.js';
 import { buildFocusEvent, focusEventId } from './focus.js';
 import { parseTask, formatDate } from './parser.js';
+import * as smart from './smart.js';
 
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
 const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
@@ -324,7 +325,12 @@ async function pullInbox() {
     }
     const when = new Date(it.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const notes = it.sender ? `Recebido de ${it.sender} em ${when}.` : `Recebido em ${when}.`;
-    if (it.text) {
+    const imgAtt = attachments.find((a) => a.type === 'image');
+    if (smart.smartEnabled() && (it.text || imgAtt)) {
+      // A IA entende o pedido (quem, o quê, quando) em vez de copiar a mensagem inteira.
+      const image = imgAtt ? await store.getFile(imgAtt.id) : null;
+      await smart.smartCreate({ text: it.text || '', image, source: 'entrada', attachments, firstId: taskId, extraNotes: notes });
+    } else if (it.text) {
       const p = parseTask(it.text, {
         knownPeople: store.knownPeople(),
         knownProjects: store.allProjects({ includeArchived: false }).map((x) => x.name),
