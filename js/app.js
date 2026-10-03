@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 import { initNotebook, fileToImages } from './notebook.js';
 import { initProjects } from './projects.js';
 import * as week from './week.js';
+import { initDashboard } from './dashboard.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -27,6 +28,28 @@ if (!store.getSettings().clientId && CONFIG.googleClientId) {
 }
 
 // ---------- Utilidades ----------
+
+function localGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function localSet(key, value) {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch { /* sem armazenamento */ }
+}
+
+// Tema: automático (segue o aparelho), claro ou escuro.
+function applyTheme(choice) {
+  localSet('lt.theme', choice === 'auto' ? '' : choice);
+  const root = document.documentElement;
+  if (choice === 'claro') root.dataset.theme = 'light';
+  else if (choice === 'escuro') root.dataset.theme = 'dark';
+  else delete root.dataset.theme;
+  const dark = root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1e1a1d' : '#5b2a4e');
+}
 
 const WEEKDAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
@@ -381,7 +404,11 @@ function render() {
   const all = store.allTasks().filter(matchesFilters);
   const open = all.filter((t) => t.status !== 'feita');
   const views = { tudo: renderTudo, agenda: renderAgenda, pessoas: renderPessoas };
-  if (state.view === 'projetos') {
+  document.body.classList.toggle('painel-view', state.view === 'painel');
+  if (state.view === 'painel') {
+    $('#list').innerHTML = dashboard.renderView();
+    dashboard.loadToday();
+  } else if (state.view === 'projetos') {
     $('#list').innerHTML = projects.renderView(matchesFilters);
     projects.hydrate($('#list'));
   } else {
@@ -840,6 +867,7 @@ function agendaClick(e) {
 }
 
 $('#list').addEventListener('click', (e) => {
+  if (state.view === 'painel' && dashboard.onClick(e)) return;
   if (state.view === 'agenda' && agendaClick(e)) return;
   const card = e.target.closest('.card[data-id]');
   if (!card) {
@@ -860,6 +888,7 @@ for (const tab of $$('.tabs [data-view]')) {
     // Tocar em "Projetos" de dentro de um projeto volta para a lista.
     if (tab.dataset.view === 'projetos' && state.view === 'projetos') state.projectId = null;
     state.view = tab.dataset.view;
+    localSet('lt.view', state.view);
     $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
     if (state.view === 'agenda') loadAgenda();
     render();
@@ -930,6 +959,8 @@ function openSettings() {
   f.appointmentMinutes.value = s.appointmentMinutes;
   f.inviteAssignee.checked = s.inviteAssignee;
   f.autoSaveDictation.checked = s.autoSaveDictation;
+  f.theme.value = localGet('lt.theme') || 'auto';
+  $('#aiKey').value = localGet('lt.ai.key') || '';
   const editor = $('#peopleEditor');
   editor.innerHTML = '';
   s.people.forEach((p) => editor.appendChild(personRow(p)));
@@ -976,6 +1007,8 @@ function readSettingsForm() {
 settingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
   store.saveSettings(readSettingsForm());
+  applyTheme(settingsForm.theme.value);
+  localSet('lt.ai.key', $('#aiKey').value.trim());
   // Atualiza e-mails das tarefas abertas de quem ganhou e-mail agora.
   for (const t of store.allTasks()) {
     const email = store.personEmail(t.assignee);
@@ -1145,6 +1178,7 @@ $('#taskFromNote').addEventListener('click', (e) => {
 
 function selectTab(view) {
   state.view = view;
+  localSet('lt.view', view);
   $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === view)));
 }
 
@@ -1154,6 +1188,16 @@ function openNotebookFor(projectId) {
   render();
   window.scrollTo({ top: 0 });
 }
+
+const dashboard = initDashboard({
+  $, esc, store, state, openTask, toast, selectTab, render, sync, openSettings,
+  PRIORITIES: store.PRIORITIES,
+});
+// Dicas dos gráficos do Painel (passar o mouse ou tocar).
+$('#list').addEventListener('pointermove', (e) => { if (state.view === 'painel') dashboard.showTip(e); });
+$('#list').addEventListener('pointerdown', (e) => { if (state.view === 'painel') dashboard.showTip(e); });
+$('#list').addEventListener('pointerleave', () => dashboard.hideTip());
+window.addEventListener('scroll', () => dashboard.hideTip(), { passive: true });
 
 const notebook = initNotebook({
   $, esc, parseInput, createFromText, makeAttachment, openTask, toast, dateLabel, stamp,
@@ -1191,6 +1235,13 @@ if (params.has('focus')) {
   history.replaceState(null, '', location.pathname);
 }
 
+applyTheme(localGet('lt.theme') || 'auto');
+{
+  // Abre na última aba usada (na primeira vez, no Painel).
+  const last = localGet('lt.view');
+  const valid = ['painel', 'tudo', 'agenda', 'projetos', 'pessoas', 'feitas', 'caderno'];
+  selectTab(valid.includes(last) ? last : 'painel');
+}
 render();
 
 // E-mail da conta, para a renovação automática não pedir para escolher a conta.
@@ -1216,7 +1267,7 @@ document.addEventListener('click', () => {
 if (g.isConnected()) {
   if (g.hasValidToken()) {
     rememberAccount();
-    sync.syncNow().then(() => loadAgenda(true));
+    sync.syncNow().then(() => { loadAgenda(true); dashboard.loadToday(true); });
   } else {
     renderSyncStatus({ state: 'auth', message: g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar' });
   }
