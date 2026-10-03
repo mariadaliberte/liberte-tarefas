@@ -1232,7 +1232,7 @@ function refreshGoogleState() {
   const s = store.getSettings();
   const connected = g.isConnected();
   $('#googleState').textContent = connected
-    ? `Conectado. Eventos vão para: ${s.calendarName}.${s.lastSyncAt ? ` Última sincronização: ${new Date(s.lastSyncAt).toLocaleString('pt-BR')}.` : ''}${g.sessionEnd() ? ` A conexão se renova sozinha até ${new Date(g.sessionEnd()).toLocaleString('pt-BR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.` : ''} Tablet e celular sincronizam em segundos quando conectados à mesma conta.`
+    ? `Conectado${g.accountEmail() ? ` como ${g.accountEmail()}` : ''}. Para tablet e celular sincronizarem, conecte a mesma conta nos dois. Eventos vão para: ${s.calendarName}.${s.lastSyncAt ? ` Última sincronização: ${new Date(s.lastSyncAt).toLocaleString('pt-BR')}.` : ''}${g.sessionEnd() ? ` A conexão se renova sozinha até ${new Date(g.sessionEnd()).toLocaleString('pt-BR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.` : ''} Tablet e celular sincronizam em segundos quando conectados à mesma conta.`
     : s.clientId
       ? 'Não conectado. Conecte para criar eventos com lembrete na sua agenda e ter backup no Drive.'
       : 'Falta configurar o Client ID do Google (veja “Configuração técnica”).';
@@ -1447,7 +1447,7 @@ function checkLocalReminders() {
         navigator.serviceWorker?.ready.then((reg) => reg.showNotification(t.title, {
           body: `${t.kind === 'compromisso' ? 'Compromisso' : 'Tarefa'} ${when}${t.assignee ? ` · ${t.assignee}` : ''}`,
           tag: key,
-          icon: 'icons/icon-192.png',
+          icon: 'icons/icon-192-v2.png',
           data: { url: location.href.split('?')[0] },
         }));
       }
@@ -1522,8 +1522,17 @@ function renderSyncStatus({ state: st, message }) {
   const el = $('#syncStatus');
   el.hidden = !g.isConnected();
   el.dataset.state = st;
-  el.textContent = st === 'ok' && store.getSettings().lastSyncAt ? 'Google Agenda conectado' : message;
+  const email = g.accountEmail();
+  el.textContent = st === 'ok' && store.getSettings().lastSyncAt
+    ? `Sincronizado${email ? ` · ${email}` : ''}`
+    : message;
+  // Faixa bem visível quando a conexão precisa de um toque para voltar.
+  $('#authBanner').hidden = !(g.isConnected() && st === 'auth');
 }
+
+$('#authBanner').addEventListener('click', () => {
+  if (!renewing) connectGoogle({ silent: true });
+});
 
 store.subscribe((reason) => {
   if (reason === 'change') render();

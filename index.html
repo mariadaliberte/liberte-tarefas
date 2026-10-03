@@ -11,8 +11,8 @@
   <meta name="apple-mobile-web-app-title" content="Liberte">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/favicon-64.png" type="image/png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/favicon-64-v2.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-v2.png">
   <script>
     // Tema escolhido em Ajustes (aplicado antes de desenhar a tela, sem piscar).
     try {
@@ -25,7 +25,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <img src="icons/icon-192.png" alt="" width="28" height="28" class="brand-photo">
+      <img src="icons/icon-192-v2.png" alt="" width="28" height="28" class="brand-photo">
       <div>
         <h1>Liberte</h1>
         <button id="syncStatus" class="sync-status" type="button" hidden></button>
@@ -36,8 +36,12 @@
     </button>
   </header>
 
+  <button type="button" id="authBanner" class="auth-banner" hidden>
+    <strong>Sincronização pausada.</strong> <span>Toque aqui para reconectar ao Google e receber o que foi feito nos outros aparelhos.</span>
+  </button>
+
   <nav class="tabs" role="tablist" aria-label="Seções">
-    <div class="nav-brand"><img src="icons/icon-192.png" alt="" width="30" height="30" class="brand-photo"><strong>Liberte</strong>
+    <div class="nav-brand"><img src="icons/icon-192-v2.png" alt="" width="30" height="30" class="brand-photo"><strong>Liberte</strong>
       <button type="button" class="nav-toggle" id="navToggle" aria-label="Recolher menu" aria-expanded="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
       </button>

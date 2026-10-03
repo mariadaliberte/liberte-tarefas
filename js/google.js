@@ -227,12 +227,43 @@ function multipart(metadata, blob) {
 
 let tasksFileId = null;
 
+let duplicateIds = [];
+
+// Usa o arquivo mais recente. Se dois aparelhos criaram arquivos separados
+// (primeira conexão quase simultânea), os outros são juntados e apagados na sincronização.
 async function findTasksFile() {
   if (tasksFileId) return tasksFileId;
   const q = encodeURIComponent(`name='${TASKS_FILE}'`);
-  const data = await api(`${DRIVE}/files?spaces=appDataFolder&q=${q}&fields=files(id)`);
-  tasksFileId = data.files[0]?.id || null;
+  const data = await api(`${DRIVE}/files?spaces=appDataFolder&q=${q}&fields=files(id,modifiedTime)&orderBy=modifiedTime%20desc`);
+  const files = data.files || [];
+  tasksFileId = files[0]?.id || null;
+  duplicateIds = files.slice(1).map((f) => f.id);
   return tasksFileId;
+}
+
+export async function readDuplicateTasks() {
+  await findTasksFile();
+  const out = [];
+  for (const id of duplicateIds) {
+    try {
+      const res = await api(`${DRIVE}/files/${id}?alt=media`, { raw: true });
+      out.push(await res.json());
+    } catch (e) {
+      if (e instanceof AuthError) throw e;
+    }
+  }
+  return out;
+}
+
+export async function deleteDuplicateTasks() {
+  for (const id of duplicateIds) {
+    await api(`${DRIVE}/files/${id}`, { method: 'DELETE' }).catch((e) => { if (e instanceof AuthError) throw e; });
+  }
+  duplicateIds = [];
+}
+
+export function accountEmail() {
+  return readSession().email || null;
 }
 
 // Data da última gravação no Drive (consulta leve, para saber se outro aparelho mudou algo).

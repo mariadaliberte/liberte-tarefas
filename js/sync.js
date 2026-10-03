@@ -65,14 +65,17 @@ export async function syncNow() {
       const modified = await g.remoteModifiedTime();
       const remote = modified ? await g.readRemoteTasks() : null;
       if (remote) store.mergeRemote(remote);
+      const duplicates = await g.readDuplicateTasks();
+      for (const d of duplicates) store.mergeRemote(d);
       await syncTemplate();
       await uploadAttachments();
       await syncCalendar();
       // Só grava no Drive quando há algo novo (evita um aparelho "acordar" o outro à toa).
       const payload = store.exportData();
-      lastRemoteModified = canonical(payload) === canonical(remote)
+      lastRemoteModified = !duplicates.length && canonical(payload) === canonical(remote)
         ? modified
         : await g.writeRemoteTasks(payload);
+      if (duplicates.length) await g.deleteDuplicateTasks();
       store.saveSettings({ lastSyncAt: new Date().toISOString() });
       setStatus('ok', 'Sincronizado');
     } catch (e) {
