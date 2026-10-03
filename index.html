@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Liberte Tarefas</title>
+  <meta name="description" content="Tarefas e compromissos da Liberte, integrados ao Google Agenda.">
+  <meta name="theme-color" content="#5b2a4e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Tarefas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <div>
+        <h1>Liberte Tarefas</h1>
+        <button id="syncStatus" class="sync-status" type="button" hidden></button>
+      </div>
+    </div>
+    <button id="openSettings" class="icon-btn" type="button" aria-label="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.43-2.53.04-.97-.04-.97 2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.68-.97l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.58-1.68.97l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64L4.57 11l-.04 1 .04.97-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.3.61.22l2.49-1c.51.39 1.07.72 1.68.97l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.68-.97l2.49 1c.22.08.48 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65Z"/></svg>
+    </button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Seções">
+    <div class="nav-brand"><img src="icons/icon.svg" alt="" width="30" height="30"><strong>Liberte Tarefas</strong></div>
+    <button role="tab" data-view="tudo" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h2v2H4V6Zm4 0h12v2H8V6Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg><span>Tudo</span></button>
+    <button role="tab" data-view="agenda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2Zm12 8H5v9h14v-9ZM5 8h14V6H5v2Zm2 4h4v4H7v-4Z"/></svg><span>Agenda</span></button>
+    <button role="tab" data-view="projetos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a1 1 0 0 1 1-1h6l2 2h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5Zm2 1v12h14V8h-7.83l-2-2H5Z"/></svg><span>Projetos</span></button>
+    <button role="tab" data-view="pessoas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm7.5 3a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7ZM2 20c0-3.3 3.1-6 7-6s7 2.7 7 6h-2c0-2.2-2.2-4-5-4s-5 1.8-5 4H2Zm16 0c0-1.4-.4-2.6-1.2-3.6 2.4.3 4.2 1.8 4.2 3.6h-3Z"/></svg><span>Pessoas</span></button>
+    <button role="tab" data-view="feitas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm-1-5.4 5.3-5.3 1.4 1.4-6.7 6.7-3.9-3.9 1.4-1.4 2.5 2.5Z"/></svg><span>Feitas</span></button>
+    <button role="tab" data-view="caderno"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12a2 2 0 0 1 2 2v3.6l-2 2V5H5v14h12v-2.6l2-2V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm16.7 6.3 1.4 1.4-8.4 8.4H13.3v-1.4l8.4-8.4ZM7 7h8v2H7V7Zm0 4h6v2H7v-2Z"/></svg><span>Caderno</span></button>
+    <button type="button" class="nav-settings" data-open-settings><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.5.1-1-.1-1 2.1-1.6-2-3.5-2.5 1a7 7 0 0 0-1.7-1L15 2h-4l-.4 2.6a7 7 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11l-.1 1 .1 1-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 22h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5-2.1-1.6Z"/></svg><span>Ajustes</span></button>
+  </nav>
+
+  <section class="filters">
+    <input id="search" type="search" placeholder="Buscar…" autocomplete="off">
+    <select id="filterPriority" aria-label="Filtrar por prioridade">
+      <option value="">Toda prioridade</option>
+      <option value="urgente">Urgente</option>
+      <option value="alta">Alta</option>
+      <option value="normal">Normal</option>
+      <option value="baixa">Baixa</option>
+    </select>
+    <select id="filterPerson" aria-label="Filtrar por responsável">
+      <option value="">Todos</option>
+    </select>
+    <select id="filterProject" aria-label="Filtrar por projeto">
+      <option value="">Todo projeto</option>
+    </select>
+  </section>
+
+  <main id="list" class="list" aria-live="polite"></main>
+
+  <section id="notebook" class="notebook" hidden aria-label="Caderno">
+    <div class="nb-head">
+      <div>
+        <p class="nb-eyebrow">Caderno</p>
+        <h2 id="nbDate"></h2>
+      </div>
+      <label class="nb-dest"><span>Salvar em</span><select id="nbDest" aria-label="Onde salvar"></select></label>
+      <div class="seg nb-mode" role="radiogroup" aria-label="Modo do caderno">
+        <label><input type="radio" name="nbMode" value="escrever" checked><span>Escrever</span></label>
+        <label><input type="radio" name="nbMode" value="desenhar"><span>Desenhar</span></label>
+        <label><input type="radio" name="nbMode" value="folha"><span>Minha folha</span></label>
+      </div>
+    </div>
+
+    <div id="nbWrite">
+      <p class="muted small nb-hint">Escreva com a caneta, uma tarefa por linha. O tablet transforma sua letra em texto. Ex.: “ligar para a Ana amanhã às 10h urgente”.</p>
+      <div class="nb-sheet">
+        <textarea id="nbText" class="paper" spellcheck="true" placeholder="Escreva aqui…" aria-label="Folha do caderno, uma tarefa por linha"></textarea>
+        <aside class="nb-side">
+          <p class="nb-eyebrow">Vai virar</p>
+          <ol id="nbPreview" class="nb-preview" hidden></ol>
+          <div class="row">
+            <button type="button" id="nbSave" class="btn primary" disabled>Salvar tarefa</button>
+            <button type="button" id="nbClear" class="btn ghost">Limpar folha</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="nbDraw" hidden>
+      <p id="nbDrawHint" class="muted small nb-hint">Rascunhe à mão livre. A folha é salva como imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada é ignorada.</p>
+      <p id="nbFolhaHint" class="muted small nb-hint" hidden>Escreva por cima da sua folha com a caneta. Ao salvar, a página preenchida vira uma tarefa com a imagem anexada.</p>
+
+      <div id="nbFolhaEmpty" class="nb-empty" hidden>
+        <p class="nb-eyebrow">Sua folha de gestão</p>
+        <h3>Use o modelo de folha que você já usa</h3>
+        <p class="muted">Envie uma vez o arquivo da sua folha em branco (foto, imagem ou PDF). Ele fica salvo neste aparelho e vira o fundo onde você escreve com a caneta.</p>
+        <div class="row">
+          <label class="btn primary"><input id="nbTemplateInput" type="file" accept="image/*,application/pdf" hidden>Enviar modelo da folha</label>
+          <label class="btn ghost"><input id="nbPageInput" type="file" accept="image/*,application/pdf" multiple hidden>Enviar página já preenchida</label>
+        </div>
+        <p class="muted small">Preencheu no Samsung Notes ou em outro app? Exporte como imagem ou PDF e use “Enviar página já preenchida”.</p>
+      </div>
+
+      <div id="nbDrawArea">
+        <div class="nb-tools row">
+          <button type="button" class="btn small tool" data-tool="caneta" aria-pressed="true">Caneta</button>
+          <button type="button" class="btn small tool" data-tool="marca" aria-pressed="false">Marca-texto</button>
+          <button type="button" class="btn small tool" data-tool="borracha" aria-pressed="false">Borracha</button>
+          <span id="nbSwatches" class="swatches" role="group" aria-label="Cor"></span>
+          <button type="button" id="nbUndo" class="btn small ghost">Desfazer</button>
+          <button type="button" id="nbWipe" class="btn small ghost">Apagar tudo</button>
+          <button type="button" id="nbMore" class="btn small ghost">+ Linhas</button>
+          <span id="nbFolhaBar" class="row nb-folha-bar" hidden>
+            <label class="btn small ghost"><input id="nbTemplateInput2" type="file" accept="image/*,application/pdf" hidden>Trocar modelo</label>
+            <label class="btn small ghost"><input id="nbPageInput2" type="file" accept="image/*,application/pdf" multiple hidden>Enviar página pronta</label>
+            <button type="button" id="nbRemoveTemplate" class="btn small ghost danger">Remover modelo</button>
+          </span>
+        </div>
+        <div id="nbCanvasWrap" class="nb-canvas-wrap">
+          <img id="nbTemplate" alt="" hidden>
+          <canvas id="nbCanvas" class="paper-canvas"></canvas>
+        </div>
+        <div class="row nb-save-row">
+          <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
+          <button type="button" id="nbSaveDrawing" class="btn primary">Salvar como tarefa</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="capture">
+    <div id="preview" class="preview" hidden></div>
+    <form id="captureForm" class="capture-row" autocomplete="off">
+      <label class="icon-btn" aria-label="Foto">
+        <input id="photoInput" type="file" accept="image/*" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.17L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+      </label>
+      <textarea id="captureInput" rows="1" placeholder="Anote, fale ou fotografe…" enterkeyhint="send"></textarea>
+      <button id="micBtn" class="icon-btn" type="button" aria-label="Falar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+      </button>
+      <button class="icon-btn primary" type="submit" aria-label="Salvar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.2 15 12 3.39 13.8z"/></svg>
+      </button>
+    </form>
+  </footer>
+
+  <!-- Edição de tarefa -->
+  <dialog id="taskDialog" class="sheet">
+    <form id="taskForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong id="taskDialogTitle">Tarefa</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <label class="field">
+        <span>O que precisa ser feito</span>
+        <textarea name="title" rows="2" required></textarea>
+      </label>
+      <div class="seg" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="kind" value="tarefa"><span>Tarefa</span></label>
+        <label><input type="radio" name="kind" value="compromisso"><span>Compromisso</span></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Data</span><input type="date" name="date"></label>
+        <label class="field"><span>Hora</span><input type="time" name="time"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="deadline"> É um prazo final (entregar até essa data)</label>
+      <div class="field">
+        <span>Prioridade</span>
+        <div class="seg prio" role="radiogroup" aria-label="Prioridade">
+          <label><input type="radio" name="priority" value="urgente"><span>Urgente</span></label>
+          <label><input type="radio" name="priority" value="alta"><span>Alta</span></label>
+          <label><input type="radio" name="priority" value="normal"><span>Normal</span></label>
+          <label><input type="radio" name="priority" value="baixa"><span>Baixa</span></label>
+        </div>
+      </div>
+      <div class="grid2">
+        <label class="field"><span>Responsável</span><input name="assignee" list="peopleList" placeholder="Eu"></label>
+        <label class="field"><span>E-mail (convida na agenda)</span><input type="email" name="assigneeEmail" placeholder="opcional"></label>
+      </div>
+      <datalist id="peopleList"></datalist>
+      <label class="field">
+        <span>Lembretes</span>
+        <select name="reminders">
+          <option value="">Padrão</option>
+          <option value="0">Na hora</option>
+          <option value="10">10 min antes</option>
+          <option value="30">30 min antes</option>
+          <option value="60">1 hora antes</option>
+          <option value="0,1440">Na hora + 1 dia antes</option>
+          <option value="60,1440">1 hora antes + 1 dia antes</option>
+          <option value="1440,10080">1 dia antes + 1 semana antes</option>
+          <option value="none">Sem lembrete</option>
+        </select>
+      </label>
+      <div class="grid2">
+        <label class="field"><span>Projeto</span><select name="projectId"></select></label>
+        <label class="field"><span>Começa em (cronograma)</span><input type="date" name="startDate"></label>
+      </div>
+      <p id="taskFromNote" class="muted small" hidden></p>
+      <label class="field"><span>Observações</span><textarea name="notes" rows="3"></textarea></label>
+      <div class="field">
+        <span>Anexos</span>
+        <div id="attachments" class="attachments"></div>
+        <div class="row">
+          <label class="btn ghost small"><input id="addPhoto" type="file" accept="image/*" hidden>+ Foto</label>
+          <button id="recordAudio" type="button" class="btn ghost small">● Gravar áudio</button>
+        </div>
+      </div>
+      <p id="createdInfo" class="muted small"></p>
+      <p id="calendarInfo" class="muted small"></p>
+      <div class="sheet-actions">
+        <button type="button" id="toggleDoneBtn" class="btn">Concluir</button>
+        <button type="button" id="deleteBtn" class="btn danger ghost">Excluir</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ajustes -->
+  <dialog id="settingsDialog" class="sheet">
+    <form id="settingsForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong>Ajustes</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+
+      <h3>Google Agenda e Drive</h3>
+      <p id="googleState" class="muted small"></p>
+      <div class="row">
+        <button type="button" id="connectBtn" class="btn primary">Conectar Google</button>
+        <button type="button" id="syncBtn" class="btn ghost">Sincronizar agora</button>
+        <button type="button" id="disconnectBtn" class="btn ghost danger">Desconectar</button>
+      </div>
+      <label class="field">
+        <span>Agenda onde criar os eventos</span>
+        <select name="calendarId" id="calendarSelect"><option value="primary">Agenda principal</option></select>
+      </label>
+      <details>
+        <summary class="small">Configuração técnica (Client ID)</summary>
+        <label class="field">
+          <span>Google OAuth Client ID</span>
+          <input name="clientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off">
+        </label>
+        <p class="muted small">Veja o passo a passo no README do projeto.</p>
+      </details>
+
+      <h3>Lembretes</h3>
+      <div class="grid2">
+        <label class="field"><span>Horário padrão das tarefas</span><input type="time" name="defaultTaskTime"></label>
+        <label class="field"><span>Duração dos compromissos (min)</span><input type="number" min="5" step="5" name="appointmentMinutes"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="inviteAssignee"> Convidar o responsável no Google Agenda (quando tiver e-mail)</label>
+      <label class="check"><input type="checkbox" name="autoSaveDictation"> Salvar automaticamente quando terminar de falar</label>
+      <div class="row">
+        <button type="button" id="notifyBtn" class="btn ghost">Ativar notificações neste aparelho</button>
+      </div>
+      <div class="row">
+        <label class="field inline"><span>Revisão diária (seg a sex)</span><input type="time" id="dailyReviewTime" value="08:30"></label>
+        <button type="button" id="dailyReviewBtn" class="btn ghost">Criar na agenda</button>
+      </div>
+
+      <h3>Pessoas</h3>
+      <p class="muted small">Responsáveis com e-mail recebem convite na agenda. Use <b>@Nome</b> ao digitar.</p>
+      <div id="peopleEditor" class="people"></div>
+      <button type="button" id="addPerson" class="btn ghost small">+ Pessoa</button>
+
+      <h3>Segurança dos dados</h3>
+      <div class="row">
+        <button type="button" id="exportBtn" class="btn ghost">Baixar backup</button>
+        <label class="btn ghost"><input id="importInput" type="file" accept="application/json" hidden>Restaurar backup</label>
+      </div>
+      <p class="muted small">Dica: digite “reunião com Ana sexta às 15h urgente @Ana”. O app entende data, hora, prioridade e responsável.</p>
+    </form>
+  </dialog>
+
+ <!-- Projeto -->
+  <dialog id="projectDialog" class="sheet">
+    <form id="projectForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong id="projectDialogTitle">Novo projeto</strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <label class="field"><span>Nome do projeto</span><input name="name" required placeholder="Ex.: Lançamento da Mentoria Fluir"></label>
+      <label class="field"><span>Objetivo ou descrição</span><textarea name="description" rows="3" placeholder="Opcional"></textarea></label>
+      <div class="grid2">
+        <label class="field"><span>Início do projeto</span><input type="date" name="startDate"></label>
+        <label class="field"><span>Entrega do projeto</span><input type="date" name="endDate"></label>
+      </div>
+      <div class="field"><span>Cor</span><div id="projectColors" class="color-choices"></div></div>
+      <label class="check" id="archiveRow"><input type="checkbox" name="archived"> Arquivar (projeto encerrado)</label>
+      <p class="muted small">Dica: escreva <b>#nome-do-projeto</b> em qualquer tarefa para colocá-la no projeto.</p>
+      <div class="sheet-actions">
+        <button type="button" id="deleteProjectBtn" class="btn danger ghost">Excluir projeto</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Anotação de projeto -->
+  <dialog id="noteDialog" class="sheet wide">
+    <form id="noteForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Fechar</button>
+        <strong class="note-project" id="noteProject"></strong>
+        <button type="submit" class="link strong">Salvar</button>
+      </div>
+      <input name="title" class="note-title" placeholder="Título da anotação" aria-label="Título da anotação">
+      <p id="noteMeta" class="muted small"></p>
+      <textarea name="body" class="paper note-body" placeholder="Escreva aqui: reunião, ideias, próximos passos… Uma ideia por linha." aria-label="Texto da anotação"></textarea>
+      <div class="field">
+        <span>Anexos (fotos, páginas da sua folha, PDF)</span>
+        <div id="noteAttachments" class="attachments"></div>
+        <div class="row"><label class="btn ghost small"><input id="noteAddFile" type="file" accept="image/*,application/pdf" multiple hidden>+ Anexar</label></div>
+      </div>
+      <div class="note-tasks">
+        <p class="nb-eyebrow">Gerar tarefas a partir desta anotação</p>
+        <p class="muted small">Marque as linhas que viram tarefas do projeto. Data, prioridade e @responsável escritos na linha são lidos automaticamente.</p>
+        <div id="noteLines" class="note-lines"></div>
+        <div class="row"><button type="button" id="noteMakeTasks" class="btn primary" disabled>Criar tarefa</button></div>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" id="deleteNoteBtn" class="btn danger ghost">Excluir anotação</button>
+      </div>
+    </form>
+  </dialog>
+
+ <dialog id="confirmDialog" class="confirm">
+    <form method="dialog">
+      <p id="confirmText"></p>
+      <div class="row end">
+        <button value="cancel" class="btn ghost">Cancelar</button>
+        <button value="ok" id="confirmOk" class="btn danger">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="recording" class="recording" hidden>
+    <span class="dot"></span><span id="recordingLabel">Ouvindo…</span>
+    <button type="button" id="stopRecording" class="btn small">Parar</button>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
