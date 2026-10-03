@@ -30,7 +30,11 @@
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Seções">
-    <div class="nav-brand"><img src="icons/icon.svg" alt="" width="30" height="30"><strong>Liberte Tarefas</strong></div>
+    <div class="nav-brand"><img src="icons/icon.svg" alt="" width="30" height="30"><strong>Liberte Tarefas</strong>
+      <button type="button" class="nav-toggle" id="navToggle" aria-label="Recolher menu" aria-expanded="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+      </button>
+    </div>
     <button role="tab" data-view="tudo" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h2v2H4V6Zm4 0h12v2H8V6Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg><span>Tudo</span></button>
     <button role="tab" data-view="agenda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2Zm12 8H5v9h14v-9ZM5 8h14V6H5v2Zm2 4h4v4H7v-4Z"/></svg><span>Agenda</span></button>
     <button role="tab" data-view="projetos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a1 1 0 0 1 1-1h6l2 2h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5Zm2 1v12h14V8h-7.83l-2-2H5Z"/></svg><span>Projetos</span></button>
@@ -77,13 +81,13 @@
       <p class="muted small nb-hint">Escreva com a caneta, uma tarefa por linha. O tablet transforma sua letra em texto. Ex.: “ligar para a Ana amanhã às 10h urgente”.</p>
       <div class="nb-sheet">
         <textarea id="nbText" class="paper" spellcheck="true" placeholder="Escreva aqui…" aria-label="Folha do caderno, uma tarefa por linha"></textarea>
+        <div class="row nb-actions">
+          <button type="button" id="nbSave" class="btn primary" disabled>Salvar tarefa</button>
+          <button type="button" id="nbClear" class="btn ghost">Limpar folha</button>
+        </div>
         <aside class="nb-side">
           <p class="nb-eyebrow">Vai virar</p>
           <ol id="nbPreview" class="nb-preview" hidden></ol>
-          <div class="row">
-            <button type="button" id="nbSave" class="btn primary" disabled>Salvar tarefa</button>
-            <button type="button" id="nbClear" class="btn ghost">Limpar folha</button>
-          </div>
         </aside>
       </div>
     </div>

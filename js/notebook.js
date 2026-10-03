@@ -167,6 +167,7 @@ export function initNotebook(deps) {
       return `<li><span>${esc(p.title)}</span>${chips.join('')}</li>`;
     }).join('');
     preview.hidden = !items.length;
+    preview.closest('.nb-side').hidden = !items.length;
   }
 
   text.addEventListener('input', updatePreview);
@@ -495,10 +496,15 @@ export function initNotebook(deps) {
       toast('Preparando sua folha…');
       const [blob] = await toImages(file);
       await putFile(TEMPLATE_ID, blob);
+      // O modelo vai para o Drive e aparece nos outros aparelhos na próxima sincronização.
+      const templateId = Date.now().toString(36);
+      localStorage.setItem('lt.template.localId', templateId);
+      store.saveSettings({ templateId, templateDriveId: null });
+      sync.scheduleSync(300);
       await showTemplate(blob);
       strokesBy.folha.length = 0;
       setMode('folha');
-      toast('Modelo salvo neste aparelho. Escreva por cima com a caneta.');
+      toast('Modelo salvo. Escreva por cima com a caneta.');
     } catch (err) {
       console.error(err);
       toast(err.message || 'Não consegui abrir esse arquivo. Use imagem (JPG/PNG) ou PDF.');
@@ -508,6 +514,9 @@ export function initNotebook(deps) {
   $('#nbTemplateInput2').addEventListener('change', chooseTemplate);
   $('#nbRemoveTemplate').addEventListener('click', async () => {
     await removeFile(TEMPLATE_ID).catch(() => {});
+    localStorage.removeItem('lt.template.localId');
+    store.saveSettings({ templateId: null, templateDriveId: null });
+    sync.scheduleSync(300);
     await showTemplate(null);
     strokesBy.folha.length = 0;
     setMode('folha');
@@ -534,7 +543,21 @@ export function initNotebook(deps) {
   $('#nbPageInput').addEventListener('change', uploadFilledPages);
   $('#nbPageInput2').addEventListener('change', uploadFilledPages);
 
-  getFile(TEMPLATE_ID).then((blob) => blob && showTemplate(blob)).catch(() => {});
+  const loadTemplate = () => getFile(TEMPLATE_ID)
+    .then(async (blob) => {
+      // Modelo enviado antes da sincronização existir: passa a ser compartilhado.
+      if (blob && !store.getSettings().templateId && !localStorage.getItem('lt.template.localId')) {
+        const templateId = Date.now().toString(36);
+        localStorage.setItem('lt.template.localId', templateId);
+        store.saveSettings({ templateId, templateDriveId: null });
+      }
+      await showTemplate(blob || null);
+      if (mode === 'folha') setMode('folha');
+    })
+    .catch(() => {});
+  loadTemplate();
+  // Modelo chegou (ou foi removido) por outro aparelho.
+  store.subscribe((reason) => { if (reason === 'template') loadTemplate(); });
 
   window.addEventListener('resize', () => { if (!$('#nbDraw').hidden) resizeCanvas(); });
 

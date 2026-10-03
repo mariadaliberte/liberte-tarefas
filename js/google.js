@@ -10,6 +10,10 @@ const SCOPES = [
 
 const TOKEN_KEY = 'lt.google.token';
 const CONNECTED_KEY = 'lt.google.connected';
+const SESSION_KEY = 'lt.google.session';
+// O Google limita apps sem servidor a acessos de 1 hora. O app renova sozinho
+// (no próximo toque na tela) até o fim da "sessão do dia", às 18h.
+const SESSION_END_HOUR = 18;
 const TASKS_FILE = 'liberte-tarefas.json';
 const ATTACH_FOLDER = 'Liberte Tarefas - Anexos';
 
@@ -18,6 +22,11 @@ let clientIdInUse = null;
 let pending = null;
 let token = loadToken();
 
+// Quem já estava conectado antes da sessão diária existir ganha uma sessão até as 18h.
+if (localStorage.getItem(CONNECTED_KEY) === '1' && !readSession().until) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...readSession(), until: nextSessionEnd() }));
+}
+
 function loadToken() {
   try {
     const t = JSON.parse(localStorage.getItem(TOKEN_KEY));
@@ -25,6 +34,35 @@ function loadToken() {
   } catch {
     return null;
   }
+}
+
+function readSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || {}; } catch { return {}; }
+}
+
+function nextSessionEnd(from = new Date()) {
+  const end = new Date(from);
+  end.setHours(SESSION_END_HOUR, 0, 0, 0);
+  if (end <= from) end.setDate(end.getDate() + 1);
+  return end.getTime();
+}
+
+export function sessionActive() {
+  return (readSession().until || 0) > Date.now();
+}
+
+export function sessionEnd() {
+  return readSession().until || null;
+}
+
+export function setAccountEmail(email) {
+  const sess = readSession();
+  if (email && sess.email !== email) localStorage.setItem(SESSION_KEY, JSON.stringify({ ...sess, email }));
+}
+
+// Precisa renovar e ainda está dentro da sessão do dia: dá para renovar num toque.
+export function canAutoRenew() {
+  return isConnected() && sessionActive() && !(token && token.expiresAt > Date.now() + 5 * 60_000);
 }
 
 export function isConnected() {
@@ -66,6 +104,11 @@ async function getClient(clientId) {
         token = { accessToken: resp.access_token, expiresAt: Date.now() + resp.expires_in * 1000 };
         localStorage.setItem(TOKEN_KEY, JSON.stringify(token));
         localStorage.setItem(CONNECTED_KEY, '1');
+        // Conexão feita (ou refeita) fora da sessão abre uma nova, até as próximas 18h.
+        const sess = readSession();
+        if (!sess.until || sess.until <= Date.now()) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify({ ...sess, until: nextSessionEnd() }));
+        }
         resolve(token);
       },
       error_callback: (err) => {
@@ -84,7 +127,8 @@ export async function connect(clientId, { silent = false } = {}) {
   const client = await getClient(clientId);
   return new Promise((resolve, reject) => {
     pending = { resolve, reject };
-    client.requestAccessToken({ prompt: silent ? '' : 'consent' });
+    const hint = readSession().email;
+    client.requestAccessToken({ prompt: silent ? '' : 'consent', ...(hint ? { login_hint: hint } : {}) });
   });
 }
 
@@ -93,6 +137,7 @@ export function disconnect() {
   token = null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(CONNECTED_KEY);
+  localStorage.removeItem(SESSION_KEY);
 }
 
 export class AuthError extends Error {}
@@ -190,6 +235,14 @@ async function findTasksFile() {
   return tasksFileId;
 }
 
+// Data da última gravação no Drive (consulta leve, para saber se outro aparelho mudou algo).
+export async function remoteModifiedTime() {
+  const id = await findTasksFile();
+  if (!id) return null;
+  const meta = await api(`${DRIVE}/files/${id}?fields=modifiedTime`);
+  return meta.modifiedTime;
+}
+
 export async function readRemoteTasks() {
   const id = await findTasksFile();
   if (!id) return null;
@@ -201,14 +254,16 @@ export async function writeRemoteTasks(data) {
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const id = await findTasksFile();
   if (id) {
-    await api(`${UPLOAD}/files/${id}?uploadType=media`, {
+    const meta = await api(`${UPLOAD}/files/${id}?uploadType=media&fields=modifiedTime`, {
       method: 'PATCH', body: blob, headers: { 'Content-Type': 'application/json' },
     });
+    return meta?.modifiedTime || null;
   } else {
-    const created = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, {
+    const created = await api(`${UPLOAD}/files?uploadType=multipart&fields=id,modifiedTime`, {
       method: 'POST', ...multipart({ name: TASKS_FILE, parents: ['appDataFolder'] }, blob),
     });
     tasksFileId = created.id;
+    return created.modifiedTime || null;
   }
 }
 

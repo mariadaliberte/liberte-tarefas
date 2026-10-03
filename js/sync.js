@@ -8,6 +8,9 @@ const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sa
 const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
 
 let running = null;
+let lastRemoteModified = null;
+const TEMPLATE_ID = 'nb-template';
+const TEMPLATE_LOCAL_KEY = 'lt.template.localId';
 let again = false;
 let timer = null;
 const statusListeners = new Set();
@@ -33,10 +36,23 @@ export function scheduleSync(delay = 1500) {
   timer = setTimeout(() => syncNow(), delay);
 }
 
+function authMessage() {
+  return g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar';
+}
+
+// Compara o conteúdo sem depender da ordem das listas nem da hora da exportação.
+function canonical(data) {
+  if (!data) return '';
+  const byId = (list) => [...(list || [])].sort((a, b) => (a.id < b.id ? -1 : 1));
+  return JSON.stringify({
+    tasks: byId(data.tasks), projects: byId(data.projects), notes: byId(data.notes), settings: data.settings || null,
+  });
+}
+
 export async function syncNow() {
   if (!g.isConnected()) return;
   if (!g.hasValidToken()) {
-    setStatus('auth', 'Toque para reconectar ao Google');
+    setStatus('auth', authMessage());
     return;
   }
   if (running) {
@@ -46,16 +62,22 @@ export async function syncNow() {
   running = (async () => {
     setStatus('syncing', 'Sincronizando…');
     try {
-      const remote = await g.readRemoteTasks();
+      const modified = await g.remoteModifiedTime();
+      const remote = modified ? await g.readRemoteTasks() : null;
       if (remote) store.mergeRemote(remote);
+      await syncTemplate();
       await uploadAttachments();
       await syncCalendar();
-      await g.writeRemoteTasks(store.exportData());
+      // Só grava no Drive quando há algo novo (evita um aparelho "acordar" o outro à toa).
+      const payload = store.exportData();
+      lastRemoteModified = canonical(payload) === canonical(remote)
+        ? modified
+        : await g.writeRemoteTasks(payload);
       store.saveSettings({ lastSyncAt: new Date().toISOString() });
       setStatus('ok', 'Sincronizado');
     } catch (e) {
       console.error(e);
-      if (e instanceof g.AuthError) setStatus('auth', 'Toque para reconectar ao Google');
+      if (e instanceof g.AuthError) setStatus('auth', authMessage());
       else setStatus('error', `Não sincronizou: ${e.message}`);
     } finally {
       running = null;
@@ -66,6 +88,39 @@ export async function syncNow() {
     }
   })();
   return running;
+}
+
+// Verificação leve e frequente: se outro aparelho gravou algo, sincroniza na hora.
+export async function checkRemote() {
+  if (running || !g.isConnected() || !g.hasValidToken()) return;
+  try {
+    const modified = await g.remoteModifiedTime();
+    if (modified && modified !== lastRemoteModified) await syncNow();
+  } catch (e) {
+    if (e instanceof g.AuthError) setStatus('auth', authMessage());
+  }
+}
+
+// Modelo da folha do Caderno: enviado ao Drive por um aparelho, baixado pelos outros.
+async function syncTemplate() {
+  const s = store.getSettings();
+  const localId = localStorage.getItem(TEMPLATE_LOCAL_KEY);
+  if (s.templateId && localId === s.templateId && !s.templateDriveId) {
+    const blob = await store.getFile(TEMPLATE_ID);
+    if (blob) {
+      const file = await g.uploadAttachment(blob, `modelo-folha-${s.templateId}.jpg`);
+      store.saveSettings({ templateDriveId: file.id });
+    }
+  } else if (s.templateId && localId !== s.templateId && s.templateDriveId) {
+    const blob = await g.downloadAttachment(s.templateDriveId);
+    await store.putFile(TEMPLATE_ID, blob);
+    localStorage.setItem(TEMPLATE_LOCAL_KEY, s.templateId);
+    store.notify('template');
+  } else if (!s.templateId && localId) {
+    await store.removeFile(TEMPLATE_ID).catch(() => {});
+    localStorage.removeItem(TEMPLATE_LOCAL_KEY);
+    store.notify('template');
+  }
 }
 
 async function uploadAttachments() {
@@ -133,15 +188,16 @@ async function syncCalendar() {
   }
 }
 
-// Eventos da agenda (os que não foram criados pelo app) para mostrar junto das tarefas.
-export async function fetchAgenda(days = 7) {
+// Eventos da agenda (os que não foram criados pelo app) entre duas datas (AAAA-MM-DD, fim exclusivo).
+export async function fetchAgenda(fromDate, toDate) {
   if (!g.hasValidToken()) return null;
   const settings = store.getSettings();
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + days);
+  const [y1, m1, d1] = fromDate.split('-').map(Number);
+  const [y2, m2, d2] = toDate.split('-').map(Number);
+  const start = new Date(y1, m1 - 1, d1);
+  const end = new Date(y2, m2 - 1, d2);
   const ids = [...new Set(['primary', settings.calendarId || 'primary'])];
+  if (!g.hasValidToken()) return null;
   const lists = await Promise.all(ids.map((id) => g.listEvents(id, start, end).catch(() => [])));
   const seen = new Set();
   return lists.flat().filter((ev) => {
