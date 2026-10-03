@@ -1,8 +1,8 @@
 // Service worker: deixa o app abrir offline e mostra notificações.
-const CACHE = 'liberte-tarefas-v7';
+const CACHE = 'liberte-tarefas-v8';
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/store.js', 'js/google.js', 'js/sync.js', 'js/parser.js', 'js/event-map.js', 'js/config.js', 'js/notebook.js', 'js/projects.js', 'js/timeline.js',
+  'js/app.js', 'js/store.js', 'js/google.js', 'js/sync.js', 'js/parser.js', 'js/event-map.js', 'js/config.js', 'js/notebook.js', 'js/projects.js', 'js/timeline.js', 'js/week.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

@@ -19,7 +19,9 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
   - Concluiu? O evento ganha ✔ e os lembretes param. Excluiu? Sai da agenda.
 - **Responsável:** use `@Nome`. Se a pessoa tiver e-mail cadastrado em Ajustes → Pessoas, ela recebe convite na agenda.
 - **Prioridade:** Urgente, Alta, Normal, Baixa (lista ordenada automaticamente).
-- **Visões:** Tudo (Atrasadas, Hoje, Amanhã, Próximos 7 dias, Mais adiante, Sem data), Agenda (próximos 30 dias junto com seus compromissos do Google), Pessoas (o que está com cada um) e Feitas.
+- **Visões:** Tudo (Atrasadas, Hoje, Amanhã, Próximos 7 dias, Mais adiante, Sem data), Agenda (no formato do Google Agenda: grade de horários por Semana, 3 dias ou Dia, com seus compromissos do Google e as tarefas; toque num horário vazio para criar uma tarefa ali), Pessoas (o que está com cada um) e Feitas.
+- **Tablet e celular sincronizados:** com a mesma conta Google conectada nos dois, o que você faz num aparece no outro em segundos (tarefas, projetos, anotações, pessoas, ajustes e o modelo da sua folha).
+- **Conexão com o Google:** o Google dá acesso por 1 hora a apps sem servidor; o app renova sozinho no seu próximo toque na tela, até as 18h. Depois das 18h, um toque reconecta.
 - **Data de criação automática:** cada tarefa mostra quando foi criada (e como: digitada, por voz, foto ou caderno). Tarefas paradas há 7 dias ou mais ganham o aviso “há N dias”. A data também vai na descrição do evento no Google Agenda.
 - **Caderno (tablet com caneta):** aba “Caderno” com folha pautada.
   - *Escrever:* escreva à mão, uma tarefa por linha; o tablet converte sua letra em texto (Scribble no iPad com Apple Pencil; S Pen ou teclado com escrita à mão no Android). O app mostra ao lado como cada linha vai virar tarefa (data, prioridade, responsável) e salva todas de uma vez. O rascunho fica guardado se você sair.

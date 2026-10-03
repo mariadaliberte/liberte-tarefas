@@ -154,6 +154,10 @@ export function mergeRemote(remote) {
   if (p) { projects = p; persistProjects(); changed = true; }
   const n = merge(notes, data.notes);
   if (n) { notes = n; persistNotes(); changed = true; }
+  if (data.settings?.updatedAt && data.settings.updatedAt > (settings.settingsUpdatedAt || '')) {
+    saveSettings({ ...data.settings.values, settingsUpdatedAt: data.settings.updatedAt }, { fromRemote: true });
+    changed = true;
+  }
   if (changed) emit('change');
   return changed;
 }
@@ -173,8 +177,14 @@ function mergeTask(local, remote) {
   return { ...winner, calendar, attachments };
 }
 
+function sharedSettings() {
+  const values = {};
+  for (const k of SYNCED_SETTINGS) if (settings[k] !== undefined) values[k] = settings[k];
+  return { values, updatedAt: settings.settingsUpdatedAt || '' };
+}
+
 export function exportData() {
-  return { version: 2, exportedAt: new Date().toISOString(), tasks, projects, notes };
+  return { version: 3, exportedAt: new Date().toISOString(), tasks, projects, notes, settings: sharedSettings() };
 }
 
 // ---- Projetos ----
@@ -285,7 +295,20 @@ export function getSettings() {
   return settings;
 }
 
-export function saveSettings(patch) {
+// Ajustes compartilhados entre aparelhos (o resto é de cada aparelho).
+const SYNCED_SETTINGS = [
+  'people', 'calendarId', 'calendarName', 'defaultTaskTime', 'appointmentMinutes',
+  'appointmentReminders', 'taskReminders', 'inviteAssignee', 'templateId', 'templateDriveId',
+];
+
+export function notify(reason) {
+  emit(reason);
+}
+
+export function saveSettings(patch, { fromRemote = false } = {}) {
+  if (!fromRemote && Object.keys(patch).some((k) => SYNCED_SETTINGS.includes(k))) {
+    patch = { ...patch, settingsUpdatedAt: new Date().toISOString() };
+  }
   settings = { ...settings, ...patch };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   emit('settings');

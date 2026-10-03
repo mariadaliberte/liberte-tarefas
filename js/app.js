@@ -5,6 +5,7 @@ import { parseTask, formatDate } from './parser.js';
 import { CONFIG } from './config.js';
 import { initNotebook, fileToImages } from './notebook.js';
 import { initProjects } from './projects.js';
+import * as week from './week.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -227,28 +228,120 @@ function renderTudo(open) {
   return html || emptyState();
 }
 
-function renderAgenda(open) {
-  const days = [];
-  const events = state.agenda || [];
-  const late = open.filter((t) => t.date && t.date < todayStr()).sort(sortTasks);
-  let html = group('Atrasadas', late, { cls: 'overdue' });
-  for (let i = 0; i < 30; i++) {
-    const day = todayStr(i);
-    const tasks = open.filter((t) => t.date === day);
-    const evs = events.filter((ev) => (ev.start?.date || formatDate(new Date(ev.start?.dateTime))) === day);
-    const items = [
-      ...evs.map((ev) => ({ sort: ev.start?.dateTime ? new Date(ev.start.dateTime).toTimeString().slice(0, 5) : '00:00', html: eventCard(ev) })),
-      ...tasks.map((t) => ({ sort: t.time || (t.kind === 'compromisso' ? '00:00' : store.getSettings().defaultTaskTime), html: taskCard(t) })),
-    ].sort((a, b) => (a.sort < b.sort ? -1 : 1));
-    if (items.length) {
-      days.push(`<div class="group-title"><span>${dateLabel(day)}</span><span>${items.length}</span></div>${items.map((x) => x.html).join('')}`);
-    }
-  }
-  html += days.join('');
-  if (!g.isConnected()) {
-    html += '<p class="muted small" style="text-align:center">Conecte o Google em Ajustes para ver seus compromissos aqui.</p>';
-  }
-  return html || emptyState();
+// ---------- Agenda no formato do Google Agenda ----------
+
+const GCAL_COLORS = {
+  1: '#7986cb', 2: '#33b679', 3: '#8e24aa', 4: '#e67c73', 5: '#f6bf26', 6: '#f4511e',
+  7: '#039be5', 8: '#616161', 9: '#3f51b5', 10: '#0b8043', 11: '#d50000',
+};
+const WEEKDAY_SHORT = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+const MONTH_LONG = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const MONTH_SHORT = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+
+function agendaMode() {
+  return state.agendaMode || (window.innerWidth >= 768 ? 'semana' : '3dias');
+}
+
+function agendaDays() {
+  return week.visibleDays(state.agendaAnchor || todayStr(), agendaMode());
+}
+
+function agendaTitle(days) {
+  const a = week.parseYmd(days[0]);
+  const b = week.parseYmd(days[days.length - 1]);
+  if (days.length === 1) return `${a.getDate()} de ${MONTH_LONG[a.getMonth()]} de ${a.getFullYear()}`;
+  if (a.getMonth() === b.getMonth()) return `${MONTH_LONG[a.getMonth()]} de ${a.getFullYear()}`;
+  if (a.getFullYear() === b.getFullYear()) return `${MONTH_SHORT[a.getMonth()]} – ${MONTH_SHORT[b.getMonth()]} de ${b.getFullYear()}`;
+  return `${MONTH_SHORT[a.getMonth()]} de ${a.getFullYear()} – ${MONTH_SHORT[b.getMonth()]} de ${b.getFullYear()}`;
+}
+
+function hhmm(min) {
+  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+}
+
+function itemColor(it) {
+  if (it.kind === 'evento') return GCAL_COLORS[it.ref.colorId] || '#039be5';
+  const t = it.ref;
+  if (t.priority === 'urgente') return 'var(--urgente)';
+  return store.getProject(t.projectId)?.color || 'var(--brand)';
+}
+
+function renderAgenda() {
+  const days = agendaDays();
+  const today = todayStr();
+  const settings = store.getSettings();
+  const tasks = store.allTasks().filter(matchesFilters);
+  const items = week.buildItems(days, {
+    events: state.agenda || [],
+    tasks,
+    appointmentMinutes: settings.appointmentMinutes,
+  });
+  const late = tasks.filter((t) => t.status !== 'feita' && t.date && t.date < today).length;
+  const H = week.HOUR_HEIGHT;
+  const mode = agendaMode();
+
+  const head = days.map((d) => {
+    const dt = week.parseYmd(d);
+    return `<div class="wk-dayhead${d === today ? ' today' : ''}">
+      <span>${WEEKDAY_SHORT[dt.getDay()]}</span><b>${dt.getDate()}</b></div>`;
+  }).join('');
+
+  const chip = (it) => {
+    const done = it.kind === 'tarefa' && it.ref.status === 'feita';
+    const attr = it.kind === 'tarefa' ? `data-task="${it.id}"` : `data-event="${esc(it.id)}"`;
+    const prefix = it.kind === 'tarefa' ? (it.ref.kind === 'compromisso' ? '' : it.ref.deadline ? '⏰ ' : '☐ ') : '';
+    return `<button type="button" class="wk-chip${done ? ' done' : ''}" ${attr} style="--c:${itemColor(it)}">${prefix}${esc(it.title)}</button>`;
+  };
+  const allDay = days.map((d) => `<div class="wk-allday-cell">${items.filter((i) => i.allDay && i.day === d).map(chip).join('')}</div>`).join('');
+
+  const hours = Array.from({ length: 24 }, (_, h) => `<div class="wk-hour" style="top:${h * H}px"><span>${h ? `${String(h).padStart(2, '0')}:00` : ''}</span></div>`).join('');
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  const cols = days.map((d) => {
+    const placed = week.layoutDay(items.filter((i) => !i.allDay && i.day === d));
+    const blocks = placed.map((it) => {
+      const top = (it.startMin / 60) * H;
+      const height = Math.max(((it.endMin - it.startMin) / 60) * H - 2, 18);
+      const done = it.kind === 'tarefa' && it.ref.status === 'feita';
+      const attr = it.kind === 'tarefa' ? `data-task="${it.id}"` : `data-event="${esc(it.id)}"`;
+      const short = height < 34;
+      const who = it.kind === 'tarefa' && it.ref.assignee ? ` · ${esc(it.ref.assignee)}` : '';
+      return `<button type="button" class="wk-event${done ? ' done' : ''}${it.kind === 'tarefa' && it.ref.kind !== 'compromisso' ? ' task' : ''}${short ? ' short' : ''}" ${attr}
+        style="top:${top}px;height:${height}px;left:calc(${(it.lane / it.lanes) * 100}% + 1px);width:calc(${100 / it.lanes}% - 3px);--c:${itemColor(it)}">
+        <b>${esc(it.title)}</b>${short ? ` <i>${hhmm(it.startMin)}</i>` : `<i>${hhmm(it.startMin)} – ${hhmm(it.endMin)}${who}</i>`}
+      </button>`;
+    }).join('');
+    const nowLine = d === today ? `<div class="wk-now" style="top:${(nowMin / 60) * H}px"></div>` : '';
+    return `<div class="wk-col${d === today ? ' today' : ''}" data-day="${d}">${blocks}${nowLine}</div>`;
+  }).join('');
+
+  return `
+    <div class="wk" style="--days:${days.length};--hour:${H}px">
+      <div class="wk-toolbar">
+        <button type="button" class="btn small" data-wk="today">Hoje</button>
+        <button type="button" class="icon-btn small-icon" data-wk="prev" aria-label="Anterior">‹</button>
+        <button type="button" class="icon-btn small-icon" data-wk="next" aria-label="Próximo">›</button>
+        <h2 class="wk-title">${(() => { const t = agendaTitle(days); return t.charAt(0).toUpperCase() + t.slice(1); })()}</h2>
+        <div class="seg wk-mode" role="radiogroup" aria-label="Visão">
+          <label><input type="radio" name="wkmode" value="dia" ${mode === 'dia' ? 'checked' : ''}><span>Dia</span></label>
+          <label><input type="radio" name="wkmode" value="3dias" ${mode === '3dias' ? 'checked' : ''}><span>3 dias</span></label>
+          <label><input type="radio" name="wkmode" value="semana" ${mode === 'semana' ? 'checked' : ''}><span>Semana</span></label>
+        </div>
+      </div>
+      ${late ? `<button type="button" class="link wk-late" data-wk="late">${late} tarefa${late > 1 ? 's' : ''} atrasada${late > 1 ? 's' : ''} — ver</button>` : ''}
+      ${!g.isConnected() ? '<p class="muted small">Conecte o Google em Ajustes para ver seus compromissos aqui.</p>' : ''}
+      <div class="wk-grid">
+        <div class="wk-head"><div class="wk-gutter"></div>${head}</div>
+        <div class="wk-allday"><div class="wk-gutter small muted">dia todo</div>${allDay}</div>
+        <div class="wk-body" id="wkBody">
+          <div class="wk-inner" style="height:${24 * H}px">
+            <div class="wk-hours">${hours}</div>
+            <div class="wk-cols">${cols}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function renderPessoas(open) {
@@ -277,6 +370,7 @@ function render() {
   document.body.classList.toggle('notebook-open', notebookOpen);
   // Na lista de projetos os filtros de tarefa não se aplicam.
   document.body.classList.toggle('projects-list', state.view === 'projetos' && !currentProjectId());
+  document.body.classList.toggle('agenda-view', state.view === 'agenda');
   $('#notebook').hidden = !notebookOpen;
   if (notebookOpen) {
     notebook?.show();
@@ -292,6 +386,13 @@ function render() {
     projects.hydrate($('#list'));
   } else {
     $('#list').innerHTML = state.view === 'feitas' ? renderFeitas(all) : views[state.view](open);
+  }
+  if (state.view === 'agenda') {
+    const body = $('#wkBody');
+    // Abre na hora atual (ou 7h), e mantém a rolagem entre atualizações.
+    const nowTop = (new Date().getHours() - 1.5) * week.HOUR_HEIGHT;
+    body.scrollTop = state.agendaScroll ?? Math.max(7 * week.HOUR_HEIGHT, Math.min(nowTop, 16 * week.HOUR_HEIGHT));
+    body.addEventListener('scroll', () => { state.agendaScroll = body.scrollTop; }, { passive: true });
   }
 
   for (const img of $$('img[data-file]')) {
@@ -325,9 +426,14 @@ function updateBadge(open) {
 
 async function loadAgenda(force = false) {
   if (!g.hasValidToken()) return;
-  if (!force && Date.now() - state.agendaLoadedAt < 5 * 60_000) return;
+  const days = agendaDays();
+  const key = `${days[0]}_${days[days.length - 1]}`;
+  if (!force && state.agendaKey === key && Date.now() - state.agendaLoadedAt < 5 * 60_000) return;
   try {
-    state.agenda = await sync.fetchAgenda(30);
+    const events = await sync.fetchAgenda(days[0], week.addDays(days[days.length - 1], 1));
+    if (!events) return;
+    state.agenda = events;
+    state.agendaKey = key;
     state.agendaLoadedAt = Date.now();
     if (state.view === 'agenda') render();
   } catch (e) {
@@ -690,7 +796,51 @@ $('#recordAudio').addEventListener('click', async () => {
 
 // ---------- Lista ----------
 
+function agendaClick(e) {
+  const nav = e.target.closest('[data-wk]')?.dataset.wk;
+  if (nav) {
+    const anchor = state.agendaAnchor || todayStr();
+    if (nav === 'today') state.agendaAnchor = todayStr();
+    if (nav === 'prev') state.agendaAnchor = week.shiftAnchor(anchor, agendaMode(), -1);
+    if (nav === 'next') state.agendaAnchor = week.shiftAnchor(anchor, agendaMode(), 1);
+    if (nav === 'late') { selectTab('tudo'); render(); window.scrollTo({ top: 0 }); return true; }
+    render();
+    loadAgenda();
+    return true;
+  }
+  const taskId = e.target.closest('[data-task]')?.dataset.task;
+  if (taskId) { openTask(taskId); return true; }
+  const evId = e.target.closest('[data-event]')?.dataset.event;
+  if (evId) {
+    const ev = (state.agenda || []).find((x) => x.id === evId);
+    if (ev) {
+      const when = ev.start?.dateTime
+        ? `${new Date(ev.start.dateTime).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+        : 'dia todo';
+      toast(`${ev.summary || '(sem título)'} · ${when}${ev.htmlLink ? ' — toque para abrir no Google Agenda' : ''}`, {
+        ms: 5000,
+        action: ev.htmlLink ? () => window.open(ev.htmlLink, '_blank', 'noopener') : null,
+      });
+    }
+    return true;
+  }
+  // Toque num horário vazio: começa uma tarefa naquele dia e hora (como no Google Agenda).
+  const col = e.target.closest('.wk-col');
+  if (col) {
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const h = Math.max(0, Math.min(23, Math.floor(y / week.HOUR_HEIGHT)));
+    const [, m, d] = col.dataset.day.split('-');
+    input.value = `${d}/${m} às ${h}h `;
+    updatePreview();
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return true;
+  }
+  return false;
+}
+
 $('#list').addEventListener('click', (e) => {
+  if (state.view === 'agenda' && agendaClick(e)) return;
   const card = e.target.closest('.card[data-id]');
   if (!card) {
     if (state.view === 'projetos') projects.onListClick(e);
@@ -745,7 +895,7 @@ function refreshGoogleState() {
   const s = store.getSettings();
   const connected = g.isConnected();
   $('#googleState').textContent = connected
-    ? `Conectado. Eventos vão para: ${s.calendarName}.${s.lastSyncAt ? ` Última sincronização: ${new Date(s.lastSyncAt).toLocaleString('pt-BR')}.` : ''}`
+    ? `Conectado. Eventos vão para: ${s.calendarName}.${s.lastSyncAt ? ` Última sincronização: ${new Date(s.lastSyncAt).toLocaleString('pt-BR')}.` : ''}${g.sessionEnd() ? ` A conexão se renova sozinha até ${new Date(g.sessionEnd()).toLocaleString('pt-BR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.` : ''} Tablet e celular sincronizam em segundos quando conectados à mesma conta.`
     : s.clientId
       ? 'Não conectado. Conecte para criar eventos com lembrete na sua agenda e ter backup no Drive.'
       : 'Falta configurar o Client ID do Google (veja “Configuração técnica”).';
@@ -790,6 +940,19 @@ function openSettings() {
 
 $('#openSettings').addEventListener('click', openSettings);
 for (const b of $$('[data-open-settings]')) b.addEventListener('click', openSettings);
+
+// Menu lateral recolhível (tablet): mais espaço útil de tela.
+function setNavCollapsed(collapsed) {
+  document.body.classList.toggle('nav-collapsed', collapsed);
+  const btn = $('#navToggle');
+  btn.setAttribute('aria-expanded', String(!collapsed));
+  btn.setAttribute('aria-label', collapsed ? 'Expandir menu' : 'Recolher menu');
+  try { localStorage.setItem('lt.nav.collapsed', collapsed ? '1' : ''); } catch { /* sem armazenamento */ }
+  // Caderno e cronograma recalculam o tamanho depois da animação.
+  setTimeout(() => window.dispatchEvent(new Event('resize')), 220);
+}
+$('#navToggle').addEventListener('click', () => setNavCollapsed(!document.body.classList.contains('nav-collapsed')));
+try { if (localStorage.getItem('lt.nav.collapsed')) setNavCollapsed(true); } catch { /* sem armazenamento */ }
 $('#addPerson').addEventListener('click', () => $('#peopleEditor').appendChild(personRow()));
 
 function readSettingsForm() {
@@ -828,7 +991,8 @@ async function connectGoogle({ silent = false } = {}) {
   try {
     if (clientId !== store.getSettings().clientId) store.saveSettings({ clientId });
     await g.connect(clientId, { silent });
-    toast('Google conectado.');
+    if (!silent) toast('Google conectado.');
+    rememberAccount();
     await sync.syncNow();
     loadAgenda(true);
     if (settingsDialog.open) { refreshGoogleState(); loadCalendars(); }
@@ -848,7 +1012,7 @@ $('#disconnectBtn').addEventListener('click', async () => {
 
 $('#syncStatus').addEventListener('click', () => {
   const st = sync.getStatus().state;
-  if (st === 'auth') connectGoogle({ silent: true });
+  if (st === 'auth' && !renewing) connectGoogle({ silent: true });
   else if (st === 'error') sync.syncNow();
 });
 
@@ -961,7 +1125,16 @@ const projects = initProjects({
   openNotebookFor: (projectId) => openNotebookFor(projectId),
 });
 
-$('#list').addEventListener('change', (e) => { if (state.view === 'projetos') projects.onListChange(e); });
+$('#list').addEventListener('change', (e) => {
+  if (state.view === 'projetos') projects.onListChange(e);
+  if (state.view === 'agenda' && e.target.name === 'wkmode') {
+    state.agendaMode = e.target.value;
+    try { localStorage.setItem('lt.agenda.mode', e.target.value); } catch { /* sem armazenamento */ }
+    render();
+    loadAgenda();
+  }
+});
+try { state.agendaMode = localStorage.getItem('lt.agenda.mode') || null; } catch { /* sem armazenamento */ }
 $('#list').addEventListener('keydown', (e) => { if (state.view === 'projetos') projects.onListKey(e); });
 $('#taskFromNote').addEventListener('click', (e) => {
   const id = e.target.closest('[data-open-note]')?.dataset.openNote;
@@ -1020,11 +1193,32 @@ if (params.has('focus')) {
 
 render();
 
+// E-mail da conta, para a renovação automática não pedir para escolher a conta.
+function rememberAccount() {
+  g.listCalendars()
+    .then((cals) => g.setAccountEmail(cals.find((c) => c.primary)?.id))
+    .catch(() => {});
+}
+
+// Renovação automática: o Google dá acesso por 1 hora; no primeiro toque depois
+// disso, o app renova sozinho (até o fim da sessão do dia, às 18h).
+let renewing = false;
+document.addEventListener('click', () => {
+  if (renewing || !g.canAutoRenew()) return;
+  renewing = true;
+  g.connect(store.getSettings().clientId, { silent: true })
+    .then(() => sync.syncNow())
+    .then(() => loadAgenda(true))
+    .catch(() => {})
+    .finally(() => { renewing = false; });
+}, true);
+
 if (g.isConnected()) {
   if (g.hasValidToken()) {
+    rememberAccount();
     sync.syncNow().then(() => loadAgenda(true));
   } else {
-    renderSyncStatus({ state: 'auth', message: 'Toque para reconectar ao Google' });
+    renderSyncStatus({ state: 'auth', message: g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar' });
   }
 }
 
@@ -1036,6 +1230,9 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 setInterval(() => sync.scheduleSync(0), 5 * 60_000);
+// Mudanças feitas em outro aparelho chegam em até ~15 segundos com o app aberto.
+setInterval(() => { if (document.visibilityState === 'visible') sync.checkRemote(); }, 15_000);
+window.addEventListener('focus', () => sync.checkRemote());
 setInterval(checkLocalReminders, 30_000);
 checkLocalReminders();
 
