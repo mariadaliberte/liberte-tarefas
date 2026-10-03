@@ -43,7 +43,15 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
 - **Caneta, marca-texto e borracha:** 6 cores de caneta e 5 de marca-texto no modo Desenhar e em Minha folha.
 - **Revisão diária:** em Ajustes, cria um lembrete recorrente (seg a sex) para revisar as tarefas sem data.
 - **Nada se perde:** tudo é salvo no aparelho na hora, inclusive sem internet, e copiado para o seu Google Drive (pasta oculta do app + pasta “Liberte Tarefas - Anexos” para fotos e áudios). Abre no celular e no computador com os mesmos dados.
-- **Compartilhar para o app (Android):** no WhatsApp, segure a mensagem → Compartilhar → Tarefas.
+- **Compartilhar para o app (Android):** no WhatsApp, segure a mensagem, foto, áudio ou PDF → Compartilhar → Liberte. Vira tarefa com o anexo.
+- **Tarefas que se repetem:** "pagar DAS todo dia 20", "reunião toda segunda às 9h", "fechamento todo último dia útil", "conferir caixa todos os dias úteis". Ao concluir, o histórico fica em Feitas e a próxima já é agendada.
+- **Checklist** dentro de cada tarefa (mostra ☑ 2/5 no cartão).
+- **Quadro Kanban** (opcional, em Ajustes): A fazer / Fazendo / Feito na aba Tudo, arrastando os cartões.
+- **Arrastar na agenda:** arraste tarefas e eventos do Google para outro horário ou dia (no tablet, segure meio segundo e arraste).
+- **Modelos de projeto:** onboarding de cliente, lançamento, evento, contratação, ou salve qualquer projeto como modelo. As tarefas já nascem com as datas.
+- **Resumo da manhã:** todo dia às 8h, um aviso "☀️ Foco do dia" no Google Agenda com as tarefas atrasadas, do dia e em andamento. A notificação chega pelo app do Google Agenda, mesmo com o Liberte fechado. Liga, desliga e muda o horário em Ajustes.
+- **Ler com IA:** no Caderno (Desenhar / Minha folha) ou numa foto anexada, "✨ Ler com IA" transforma a letra de mão em tarefas para você conferir.
+- **Servidor opcional** (Google sempre conectado, caixa de entrada pelo WhatsApp e acesso da equipe): veja [server/README.md](server/README.md).
 
 ## Configuração (uma vez só, ~15 minutos)
 

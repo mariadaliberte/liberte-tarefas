@@ -1,0 +1,22 @@
+# Servidor do Liberte (Cloudflare Workers, plano gratuito).
+# Passo a passo em server/README.md.
+name = "liberte"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Endereço do app (sem barra no final). Só ele pode chamar o servidor.
+ALLOWED_ORIGIN = "https://mariadaliberte.github.io"
+# Client ID do Google (o mesmo do app).
+GOOGLE_CLIENT_ID = "559871219811-frs39k63p0hfc22f42ofdrt3p5687fro.apps.googleusercontent.com"
+# E-mail(s) da conta Google da dona, separados por vírgula. Só esses podem ser "dona".
+OWNER_EMAILS = "PREENCHER@gmail.com"
+
+# Segredos (NÃO ficam neste arquivo). Cadastrar com:
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+#   npx wrangler secret put INBOX_KEY
+
+[[d1_databases]]
+binding = "DB"
+database_name = "liberte"
+database_id = "PREENCHER-com-o-id-que-o-wrangler-mostrar"

@@ -1547,6 +1547,17 @@ function refreshGoogleState() {
     : s.clientId
       ? 'Não conectado. Conecte para criar eventos com lembrete na sua agenda e ter backup no Drive.'
       : 'Falta configurar o Client ID do Google (veja “Configuração técnica”).';
+  const srv = g.serverUrl();
+  $('#serverBox').hidden = !srv;
+  if (srv) {
+    const sess = g.serverSession();
+    $('#serverState').textContent = sess
+      ? `✅ Conexão permanente ativa (${sess.email}): o Google fica conectado sem pedir login de novo. Caixa de entrada e equipe ligadas.`
+      : '⚠️ Servidor configurado, falta ligar: toque em “Conectar Google” uma vez (marque todas as permissões).';
+    const link = new URL('equipe.html', location.href).href;
+    $('#teamLink').href = link;
+    $('#teamLink').textContent = link;
+  }
   $('#connectBtn').textContent = connected ? 'Reconectar' : 'Conectar Google';
   $('#syncBtn').hidden = !connected;
   $('#disconnectBtn').hidden = !connected;
@@ -1606,6 +1617,9 @@ function setNavCollapsed(collapsed) {
 }
 $('#navToggle').addEventListener('click', () => setNavCollapsed(!document.body.classList.contains('nav-collapsed')));
 try { if (localStorage.getItem('lt.nav.collapsed')) setNavCollapsed(true); } catch { /* sem armazenamento */ }
+$('#copyTeamLink').addEventListener('click', () => {
+  navigator.clipboard?.writeText($('#teamLink').href).then(() => toast('Link copiado. Mande para a equipe.'), () => toast($('#teamLink').href));
+});
 $('#addPerson').addEventListener('click', () => $('#peopleEditor').appendChild(personRow()));
 
 function readSettingsForm() {
@@ -1906,13 +1920,19 @@ document.addEventListener('click', () => {
 }, true);
 
 if (g.isConnected()) {
-  if (g.hasValidToken()) {
-    rememberAccount();
-    sync.syncNow().then(() => { loadAgenda(true); dashboard.loadToday(true); });
-  } else {
-    renderSyncStatus({ state: 'auth', message: g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar' });
-  }
+  g.ensureToken().then((ok) => {
+    if (ok) {
+      rememberAccount();
+      sync.syncNow().then(() => { loadAgenda(true); dashboard.loadToday(true); sync.pollServer(true); });
+    } else {
+      renderSyncStatus({ state: 'auth', message: g.serverUrl() ? 'Toque aqui para conectar o Google (uma vez só)' : g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar' });
+    }
+  });
 }
+// Com servidor: renova o acesso antes de vencer, sem toque nenhum.
+setInterval(() => { if (g.serverSession()) g.ensureToken(); }, 4 * 60_000);
+// Novidades da caixa de entrada e da equipe.
+sync.onActivity((msg) => { render(); toast(msg, { ms: 6000 }); });
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {

@@ -766,3 +766,5 @@ body.painel-view .filters { display: none; }
 #confirmText { white-space: pre-line; max-height: 60vh; overflow: auto; }
 figure .ai-read { display: block; margin-top: 6px; }
 .focus-row { align-items: center; }
+.server-box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0; background: var(--bg); }
+.server-box a { overflow-wrap: anywhere; }

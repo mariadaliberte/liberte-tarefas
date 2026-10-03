@@ -1,5 +1,9 @@
 // Conexão com Google: login (Google Identity Services), Google Agenda e Google Drive.
-// Roda 100% no navegador — não existe servidor intermediário guardando seus dados.
+// Sem servidor: o Google dá acessos de 1 hora, renovados com um toque até as 18h.
+// Com servidor (CONFIG.serverUrl): o servidor guarda a autorização e o app renova
+// sozinho, sem janelinha e sem horário limite. Os dados continuam no Drive.
+
+import { CONFIG } from './config.js';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -11,6 +15,7 @@ const SCOPES = [
 const TOKEN_KEY = 'lt.google.token';
 const CONNECTED_KEY = 'lt.google.connected';
 const SESSION_KEY = 'lt.google.session';
+const SERVER_KEY = 'lt.server.v1';
 // O Google limita apps sem servidor a acessos de 1 hora. O app renova sozinho
 // (no próximo toque na tela) até o fim da "sessão do dia", às 18h.
 const SESSION_END_HOUR = 18;
@@ -48,11 +53,63 @@ function nextSessionEnd(from = new Date()) {
 }
 
 export function sessionActive() {
-  return (readSession().until || 0) > Date.now();
+  return !!serverSession() || (readSession().until || 0) > Date.now();
 }
 
 export function sessionEnd() {
-  return readSession().until || null;
+  return serverSession() ? null : readSession().until || null;
+}
+
+// ---- Servidor (login durável) ----
+
+export function serverUrl() {
+  return (CONFIG.serverUrl || '').replace(/\/+$/, '');
+}
+
+export function serverSession() {
+  if (!serverUrl()) return null;
+  try { return JSON.parse(localStorage.getItem(SERVER_KEY)) || null; } catch { return null; }
+}
+
+export async function serverFetch(path, { method = 'GET', body, raw = false } = {}) {
+  const sess = serverSession();
+  if (!sess) throw new AuthError('Sem conexão com o servidor.');
+  const res = await fetch(serverUrl() + path, {
+    method,
+    headers: { Authorization: `Bearer ${sess.session}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    // Sessão do servidor acabou (ou o Google pediu login de novo): volta ao modo "toque para conectar".
+    localStorage.removeItem(SERVER_KEY);
+    throw new AuthError((await res.json().catch(() => ({}))).error || 'Conecte o Google de novo.');
+  }
+  if (!res.ok) {
+    const err = new Error((await res.json().catch(() => ({}))).error || `Servidor respondeu ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  return raw ? res : res.json();
+}
+
+function saveToken(accessToken, expiresIn) {
+  token = { accessToken, expiresAt: Date.now() + expiresIn * 1000 };
+  localStorage.setItem(TOKEN_KEY, JSON.stringify(token));
+  localStorage.setItem(CONNECTED_KEY, '1');
+}
+
+let refreshing = null;
+// Garante um acesso válido: com servidor, pede um novo sem incomodar; sem servidor, só confere.
+export async function ensureToken() {
+  if (token && token.expiresAt > Date.now() + 5 * 60_000) return true;
+  if (!serverSession()) return hasValidToken();
+  if (!refreshing) {
+    refreshing = serverFetch('/auth/token', { method: 'POST' })
+      .then((r) => { saveToken(r.access_token, r.expires_in); return true; })
+      .catch((e) => { console.warn('Renovação pelo servidor:', e.message); return hasValidToken(); })
+      .finally(() => { refreshing = null; });
+  }
+  return refreshing;
 }
 
 export function setAccountEmail(email) {
@@ -62,7 +119,7 @@ export function setAccountEmail(email) {
 
 // Precisa renovar e ainda está dentro da sessão do dia: dá para renovar num toque.
 export function canAutoRenew() {
-  return isConnected() && sessionActive() && !(token && token.expiresAt > Date.now() + 5 * 60_000);
+  return isConnected() && !serverUrl() && sessionActive() && !(token && token.expiresAt > Date.now() + 5 * 60_000);
 }
 
 export function isConnected() {
@@ -122,8 +179,49 @@ async function getClient(clientId) {
   return tokenClient;
 }
 
+// Login pelo servidor: o Google devolve um código, o servidor troca pela autorização permanente.
+let codeClient = null;
+async function connectViaServer(clientId) {
+  await loadGis();
+  const hint = readSession().email || serverSession()?.email;
+  const code = await new Promise((resolve, reject) => {
+    codeClient = google.accounts.oauth2.initCodeClient({
+      client_id: clientId,
+      scope: `${SCOPES} openid email profile`,
+      ux_mode: 'popup',
+      ...(hint ? { login_hint: hint } : {}),
+      // Consentimento completo: é quando o Google entrega a autorização permanente.
+      // Acontece uma vez só; depois o servidor renova sozinho.
+      prompt: 'consent',
+      callback: (resp) => {
+        if (resp.error) return reject(new Error(resp.error_description || resp.error));
+        if (!google.accounts.oauth2.hasGrantedAllScopes(resp, ...SCOPES.split(' '))) {
+          return reject(new Error('Marque todas as permissões (Agenda e Drive) para o app funcionar.'));
+        }
+        resolve(resp.code);
+      },
+      error_callback: (err) => reject(new Error(err?.type === 'popup_closed' ? 'Login cancelado.' : 'Falha no login do Google.')),
+    });
+    codeClient.requestCode();
+  });
+  const device = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? 'celular/tablet' : 'computador';
+  const res = await fetch(`${serverUrl()}/auth/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, device }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Servidor respondeu ${res.status}`);
+  if (data.role !== 'owner') throw new Error('Esta conta é da equipe. Use o link da equipe para ver suas tarefas.');
+  localStorage.setItem(SERVER_KEY, JSON.stringify({ session: data.session, email: data.email, role: data.role }));
+  setAccountEmail(data.email);
+  saveToken(data.access_token, data.expires_in);
+  return token;
+}
+
 // Precisa ser chamado a partir de um toque/clique (o Google abre uma janelinha).
 export async function connect(clientId, { silent = false } = {}) {
+  if (serverUrl()) return connectViaServer(clientId);
   const client = await getClient(clientId);
   return new Promise((resolve, reject) => {
     pending = { resolve, reject };
@@ -133,7 +231,10 @@ export async function connect(clientId, { silent = false } = {}) {
 }
 
 export function disconnect() {
-  if (token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.accessToken, () => {});
+  if (serverSession()) {
+    serverFetch('/auth/logout', { method: 'POST', body: { everywhere: false } }).catch(() => {});
+    localStorage.removeItem(SERVER_KEY);
+  } else if (token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.accessToken, () => {});
   token = null;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(CONNECTED_KEY);
@@ -142,7 +243,8 @@ export function disconnect() {
 
 export class AuthError extends Error {}
 
-async function api(url, { method = 'GET', body, headers = {}, raw = false } = {}) {
+async function api(url, { method = 'GET', body, headers = {}, raw = false, retried = false } = {}) {
+  if (!hasValidToken()) await ensureToken();
   if (!hasValidToken()) throw new AuthError('Sessão do Google expirada.');
   const res = await fetch(url, {
     method,
@@ -152,6 +254,10 @@ async function api(url, { method = 'GET', body, headers = {}, raw = false } = {}
   if (res.status === 401) {
     token = null;
     localStorage.removeItem(TOKEN_KEY);
+    // Com servidor, tenta uma vez com um acesso novo antes de desistir.
+    if (serverSession() && !retried && await ensureToken()) {
+      return api(url, { method, body, headers, raw, retried: true });
+    }
     throw new AuthError('Sessão do Google expirada.');
   }
   if (res.status === 204 || res.status === 410) return null;

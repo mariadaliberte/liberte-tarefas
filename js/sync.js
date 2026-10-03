@@ -4,6 +4,7 @@ import * as store from './store.js';
 import * as g from './google.js';
 import { buildEvent, eventHash } from './event-map.js';
 import { buildFocusEvent, focusEventId } from './focus.js';
+import { parseTask, formatDate } from './parser.js';
 
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
 const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
@@ -38,6 +39,7 @@ export function scheduleSync(delay = 1500) {
 }
 
 function authMessage() {
+  if (g.serverUrl()) return 'Toque aqui para conectar o Google (uma vez só)';
   return g.sessionActive() ? 'Toque na tela para reconectar ao Google' : 'Sessão do dia encerrada (18h) — toque para reconectar';
 }
 
@@ -52,7 +54,7 @@ function canonical(data) {
 
 export async function syncNow() {
   if (!g.isConnected()) return;
-  if (!g.hasValidToken()) {
+  if (!(await g.ensureToken())) {
     setStatus('auth', authMessage());
     return;
   }
@@ -72,6 +74,7 @@ export async function syncNow() {
       await uploadAttachments();
       await syncCalendar();
       await syncFocus().catch((e) => console.warn('Foco do dia:', e));
+      await pushTeam().catch((e) => console.warn('Equipe:', e));
       // Só grava no Drive quando há algo novo (evita um aparelho "acordar" o outro à toa).
       const payload = store.exportData();
       lastRemoteModified = !duplicates.length && canonical(payload) === canonical(remote)
@@ -98,7 +101,8 @@ export async function syncNow() {
 
 // Verificação leve e frequente: se outro aparelho gravou algo, sincroniza na hora.
 export async function checkRemote() {
-  if (running || !g.isConnected() || !g.hasValidToken()) return;
+  if (running || !g.isConnected() || !(await g.ensureToken())) return;
+  pollServer();
   try {
     const modified = await g.remoteModifiedTime();
     if (modified && modified !== lastRemoteModified) await syncNow();
@@ -241,7 +245,7 @@ async function syncFocus() {
 
 // Eventos da agenda (os que não foram criados pelo app) entre duas datas (AAAA-MM-DD, fim exclusivo).
 export async function fetchAgenda(fromDate, toDate) {
-  if (!g.hasValidToken()) return null;
+  if (!(await g.ensureToken())) return null;
   const settings = store.getSettings();
   const [y1, m1, d1] = fromDate.split('-').map(Number);
   const [y2, m2, d2] = toDate.split('-').map(Number);
@@ -260,4 +264,139 @@ export async function fetchAgenda(fromDate, toDate) {
     seen.add(ev.id);
     return true;
   });
+}
+
+// ---------- Servidor: caixa de entrada (WhatsApp/Make) e equipe ----------
+
+const TEAM_HASH_KEY = 'lt.team.hash';
+const activityListeners = new Set();
+let lastPoll = 0;
+let polling = false;
+
+export function onActivity(fn) {
+  activityListeners.add(fn);
+}
+
+function activity(message) {
+  for (const fn of activityListeners) fn(message);
+}
+
+const isOwner = () => g.serverSession()?.role === 'owner';
+
+// Leve: no máximo a cada 45 s, só com servidor configurado e conectado.
+export async function pollServer(force = false) {
+  if (!isOwner() || polling || (!force && Date.now() - lastPoll < 45_000)) return;
+  polling = true;
+  lastPoll = Date.now();
+  try {
+    await pullInbox();
+    await pullTeamUpdates();
+  } catch (e) {
+    console.warn('Servidor:', e.message);
+  } finally {
+    polling = false;
+  }
+}
+
+function attachmentType(mime, name) {
+  if ((mime || '').startsWith('image/')) return 'image';
+  if ((mime || '').startsWith('audio/') || /\.(ogg|opus|m4a|mp3)$/i.test(name || '')) return 'audio';
+  return 'file';
+}
+
+async function pullInbox() {
+  const { items } = await g.serverFetch('/inbox');
+  if (!items.length) return;
+  const done = [];
+  let created = 0;
+  for (const it of items) {
+    // Id fixo por mensagem: se dois aparelhos (ou duas abas) lerem juntos, vira uma tarefa só.
+    const taskId = `in${it.id.replace(/-/g, '')}`;
+    done.push(it.id);
+    if (store.allTasks({ includeDeleted: true }).some((t) => t.id === taskId)) continue;
+    created++;
+    const attachments = [];
+    if (it.has_file) {
+      const blob = await (await g.serverFetch(`/inbox/${it.id}/file`, { raw: true })).blob();
+      const id = `${taskId}f`;
+      await store.putFile(id, blob);
+      attachments.push({ id, type: attachmentType(it.file_type, it.file_name), name: it.file_name || `arquivo-${formatDate(new Date())}-${id}`, mime: it.file_type });
+    }
+    const when = new Date(it.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const notes = it.sender ? `Recebido de ${it.sender} em ${when}.` : `Recebido em ${when}.`;
+    if (it.text) {
+      const p = parseTask(it.text, {
+        knownPeople: store.knownPeople(),
+        knownProjects: store.allProjects({ includeArchived: false }).map((x) => x.name),
+      });
+      store.createTask({
+        title: p.title, kind: p.kind, date: p.date, time: p.time, deadline: p.deadline, priority: p.priority || 'normal',
+        assignee: p.assignee, assigneeEmail: store.personEmail(p.assignee), recurrence: p.recurrence,
+        projectId: p.project ? store.allProjects().find((x) => x.name === p.project)?.id || null : null,
+        notes, attachments, source: 'entrada', id: taskId,
+      });
+    } else {
+      const kind = attachments[0]?.type === 'audio' ? 'Áudio' : attachments[0]?.type === 'image' ? 'Foto' : 'Arquivo';
+      store.createTask({ title: `${kind} recebido ${when}`, notes, attachments, source: 'entrada', id: taskId });
+    }
+  }
+  await g.serverFetch('/inbox/ack', { method: 'POST', body: { ids: done } });
+  if (!created) return;
+  activity(created === 1 ? 'Chegou 1 tarefa pela caixa de entrada.' : `Chegaram ${created} tarefas pela caixa de entrada.`);
+  scheduleSync(300);
+}
+
+async function pullTeamUpdates() {
+  const { items } = await g.serverFetch('/team/updates');
+  if (!items.length) return;
+  const msgs = [];
+  for (const u of items) {
+    const t = store.getTask(u.task_id);
+    // teamSeq: última atualização já aplicada (evita aplicar duas vezes vindo de dois aparelhos).
+    if (!t || t.deleted || (t.teamSeq || 0) >= u.id) continue;
+    const who = u.member_name || u.member_email;
+    if (u.kind === 'status' && u.value === 'feita' && t.status !== 'feita') {
+      store.toggleDone(t.id);
+      msgs.push(`${who} concluiu “${t.title}”`);
+    } else if (u.kind === 'status' && u.value === 'aberta' && t.status === 'feita') {
+      store.updateTask(t.id, { status: 'aberta', doneAt: null });
+      msgs.push(`${who} reabriu “${t.title}”`);
+    } else if (u.kind === 'comment') {
+      const when = new Date(u.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const notes = `${t.notes ? `${t.notes}\n\n` : ''}💬 ${who} (${when}): ${u.value}`;
+      store.updateTask(t.id, { notes });
+      msgs.push(`${who} comentou em “${t.title}”`);
+    } else if (u.kind === 'checklist') {
+      try { store.setChecklist(t.id, JSON.parse(u.value)); } catch { /* ignora */ }
+    }
+    store.updateTask(t.id, { teamSeq: u.id }, { silent: true });
+  }
+  await g.serverFetch('/team/updates/ack', { method: 'POST', body: { upTo: items.at(-1).id } });
+  if (msgs.length) activity(msgs.length > 2 ? `${msgs[0]} e mais ${msgs.length - 1} atualizações da equipe.` : msgs.join(' · '));
+  scheduleSync(300);
+}
+
+// Envia ao servidor quem é da equipe e as tarefas de cada pessoa (só quando algo mudou).
+async function pushTeam() {
+  if (!isOwner()) return;
+  // Primeiro aplica o que a equipe já fez (para não sobrescrever uma conclusão recente).
+  await pullTeamUpdates();
+  const settings = store.getSettings();
+  const members = (settings.people || []).filter((p) => p.email).map((p) => ({ name: p.name, email: p.email.toLowerCase() }));
+  const emails = new Set(members.map((m) => m.email));
+  const cutoff = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const tasks = store.allTasks()
+    .filter((t) => t.assigneeEmail && emails.has(t.assigneeEmail.toLowerCase()) && (t.status !== 'feita' || (t.doneAt || t.updatedAt || '') > cutoff))
+    .map((t) => ({
+      id: t.id, title: t.title, notes: t.notes || '', date: t.date, time: t.time, deadline: !!t.deadline,
+      priority: t.priority, status: t.status, kind: t.kind, checklist: t.checklist || [],
+      assigneeEmail: t.assigneeEmail.toLowerCase(), project: store.getProject(t.projectId)?.name || null,
+    }));
+  const payload = { members, tasks };
+  const hash = eventHash(payload);
+  let prev = {};
+  try { prev = JSON.parse(localStorage.getItem(TEAM_HASH_KEY)) || {}; } catch { /* vazio */ }
+  if (prev.hash === hash && Date.now() - (prev.at || 0) < 6 * 3_600_000) return;
+  await g.serverFetch('/team', { method: 'PUT', body: payload });
+  localStorage.setItem(TEAM_HASH_KEY, JSON.stringify({ hash, at: Date.now() }));
 }
