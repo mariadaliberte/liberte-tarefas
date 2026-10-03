@@ -6,6 +6,10 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
 
 ## O que ele faz
 
+- **Painel (tela inicial):** resumo do dia e da semana em números (para hoje, atrasadas, próximos 7 dias, concluídas na semana, sem data, em aberto), agenda de hoje, gráficos de ritmo (criadas x concluídas), carga dos próximos dias, prioridades, responsáveis e projetos. Inclui **análise automática** (alertas e sugestões por regras, sem custo) e **análise com IA** (Claude), que lê suas tarefas e devolve resumo, pontos de atenção, sugestões e o foco do dia.
+  - Para a IA: crie uma chave em console.anthropic.com → API Keys (defina um limite de gasto) e cole em Ajustes → Análise com IA. A chave fica só no aparelho. Cada análise custa poucos centavos de dólar.
+- **Aparência:** Ajustes → Aparência: automático (segue o aparelho), claro ou escuro.
+
 - **Captura rápida por texto, voz ou foto.** Escreva ou fale do jeito que você fala: o app entende data, hora, prioridade e responsável.
   - `reunião com fornecedor sexta às 15h urgente @Ana`
   - `pagar DAS dia 20 prioridade alta`
