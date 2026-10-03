@@ -676,3 +676,55 @@ body.painel-view .filters { display: none; }
   position: fixed; z-index: 30; pointer-events: none; background: var(--text); color: var(--surface);
   font-size: 12.5px; padding: 6px 10px; border-radius: 8px; max-width: 260px; box-shadow: var(--shadow);
 }
+
+/* ---------- Caderno: zoom e área de desenho ---------- */
+.nb-zoom { align-items: center; margin: 0 0 8px; gap: 10px 14px; }
+.nb-zoom-ctrl { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 10px; padding: 2px; background: var(--surface); }
+.nb-zoom-ctrl .btn { border: 0; min-width: 40px; font-variant-numeric: tabular-nums; }
+.nb-zoom-tip { flex: 1 1 260px; }
+.nb-viewport {
+  width: 100%; overflow: auto; max-height: calc(100dvh - 230px); min-height: 360px;
+  border-radius: 12px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+}
+.nb-viewport .nb-canvas-wrap { width: 100%; }
+.nb-viewport .paper-canvas {
+  background-image:
+    linear-gradient(to right, transparent calc(47px * var(--z, 1)), var(--margin-rule) calc(47px * var(--z, 1)), var(--margin-rule) calc(48px * var(--z, 1)), transparent calc(48px * var(--z, 1))),
+    repeating-linear-gradient(to bottom, transparent 0, transparent calc(39px * var(--z, 1)), var(--rule) calc(39px * var(--z, 1)), var(--rule) calc(40px * var(--z, 1)));
+}
+
+/* ---------- Janela da tarefa: ações claras ---------- */
+.head-spacer { width: 60px; }
+.sheet-footer {
+  position: sticky; bottom: 0; z-index: 2; display: flex; gap: 10px;
+  margin: 16px -16px 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--line);
+}
+.sheet-footer .btn { padding: 12px 18px; font-size: 15.5px; }
+.sheet-footer .btn.primary { flex: 1; font-weight: 700; }
+.sheet-footer [hidden] + .btn.primary { flex: 1; }
+.danger-zone { margin-top: 28px; padding-top: 14px; border-top: 1px dashed var(--line); text-align: center; }
+.link.danger { color: var(--urgente); font-size: 14px; }
+.list-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 10px 0 4px; }
+.person-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  margin: 18px 4px 8px;
+}
+.person-name { font-weight: 700; font-size: 15px; }
+.person-empty { margin: 0 4px 8px; }
+.person-head .row { margin: 0; align-items: center; }
+.dlg-title { margin: 0 0 6px; font-size: 17px; }
+.sheet form:has(.sheet-footer) { padding-bottom: 0; }
+
+/* ---------- Agenda: compromisso, zoom e troca de semana ---------- */
+.grid3 { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+@media (max-width: 420px) { .grid3 { grid-template-columns: 1fr 1fr; } .grid3 > :first-child { grid-column: 1 / -1; } }
+.sheet-footer a.btn { text-decoration: none; color: var(--text); }
+.wk-zoom { margin-left: 2px; }
+.wk-inner { height: calc(var(--hour) * 24); }
+.wk-body { touch-action: pan-y; }
+.wk.slide-next .wk-cols, .wk.slide-next .wk-head, .wk.slide-next .wk-allday { animation: wk-in-next .22s ease-out; }
+.wk.slide-prev .wk-cols, .wk.slide-prev .wk-head, .wk.slide-prev .wk-allday { animation: wk-in-prev .22s ease-out; }
+@keyframes wk-in-next { from { transform: translateX(24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes wk-in-prev { from { transform: translateX(-24px); opacity: .4; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .wk .wk-cols, .wk .wk-head, .wk .wk-allday { animation: none !important; } }

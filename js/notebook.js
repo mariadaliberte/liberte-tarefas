@@ -204,9 +204,16 @@ export function initNotebook(deps) {
   let toolPrefs = { caneta: 'azul', marca: 'amarelo' };
   try { toolPrefs = { ...toolPrefs, ...JSON.parse(localStorage.getItem(TOOLS_KEY) || '{}') }; } catch { /* sem armazenamento */ }
   let penSeen = false;
-  let cssW = 0;
+  let cssW = 0; // largura exibida (já com zoom)
   let cssH = 0;
+  let baseW = 0; // largura da folha com zoom 100%
+  let baseH = 0;
+  let zoom = 1;
   let extraLines = 0;
+  const viewport = $('#nbViewport');
+  // Por padrão só a caneta escreve; o dedo move e dá zoom (palma apoiada não risca).
+  let fingerDraws = false;
+  try { fingerDraws = localStorage.getItem('lt.notebook.finger') === '1'; } catch { /* sem armazenamento */ }
 
   function css(name) {
     return getComputedStyle(root).getPropertyValue(name).trim();
@@ -231,12 +238,19 @@ export function initNotebook(deps) {
     const onTemplate = mode === 'folha' && template;
     wrap.classList.toggle('on-template', !!onTemplate);
     templateImg.hidden = !onTemplate;
-    cssW = Math.floor(wrap.getBoundingClientRect().width);
-    if (!cssW) return;
-    cssH = onTemplate
-      ? Math.round(cssW * (template.h / template.w))
+    baseW = Math.floor(viewport.clientWidth);
+    if (!baseW) return;
+    baseH = onTemplate
+      ? Math.round(baseW * (template.h / template.w))
       : Math.floor(Math.max(480, window.innerHeight * 0.62)) + extraLines * LINE;
-    const dpr = window.devicePixelRatio || 1;
+    cssW = Math.round(baseW * zoom);
+    cssH = Math.round(baseH * zoom);
+    wrap.style.width = `${cssW}px`;
+    wrap.style.height = `${cssH}px`;
+    wrap.style.setProperty('--z', zoom);
+    canvas.style.width = `${cssW}px`;
+    $('#nbZoomLabel').textContent = `${Math.round(zoom * 100)}%`;
+    const dpr = Math.min(window.devicePixelRatio || 1, zoom > 2 ? 1.5 : 3);
     canvas.width = cssW * dpr;
     canvas.height = cssH * dpr;
     canvas.style.height = `${cssH}px`;
@@ -316,17 +330,88 @@ export function initNotebook(deps) {
   function point(e) {
     const r = canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - r.left) / cssW,
-      y: (e.clientY - r.top) / cssW,
+      x: (e.clientX - r.left) / r.width,
+      y: (e.clientY - r.top) / r.width,
       p: e.pressure && e.pointerType === 'pen' ? e.pressure : 0.5,
     };
   }
 
+  // ---------- Dedo: mover a folha (1 dedo) e zoom de pinça (2 dedos) ----------
+  const touches = new Map();
+  let pinch = null;
+
+  function setZoom(next, anchorX, anchorY) {
+    const z = Math.min(4, Math.max(1, Math.round(next * 100) / 100));
+    if (z === zoom) return;
+    const vr = viewport.getBoundingClientRect();
+    const ax = (anchorX ?? vr.left + vr.width / 2) - vr.left;
+    const ay = (anchorY ?? vr.top + vr.height / 2) - vr.top;
+    // Ponto da folha sob o dedo/centro, em proporção da largura: continua no mesmo lugar.
+    const nx = (viewport.scrollLeft + ax) / cssW;
+    const ny = (viewport.scrollTop + ay) / cssW;
+    zoom = z;
+    resizeCanvas();
+    viewport.scrollLeft = nx * cssW - ax;
+    viewport.scrollTop = ny * cssW - ay;
+  }
+
+  function touchGesture(e, phase) {
+    if (phase === 'down') {
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* ponteiro já liberado */ }
+      if (touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+      }
+      return;
+    }
+    if (phase === 'move' && touches.has(e.pointerId)) {
+      const prev = touches.get(e.pointerId);
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size >= 2 && pinch) {
+        const [a, b] = [...touches.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch.dist > 10) setZoom(pinch.zoom * (dist / pinch.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+      } else if (touches.size === 1) {
+        viewport.scrollLeft -= e.clientX - prev.x;
+        viewport.scrollTop -= e.clientY - prev.y;
+      }
+      return;
+    }
+    if (phase === 'up') {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+    }
+  }
+
+  // Zoom com Ctrl + rolagem (computador).
+  viewport.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    setZoom(zoom * (e.deltaY < 0 ? 1.1 : 0.9), e.clientX, e.clientY);
+  }, { passive: false });
+
+  $('#nbZoomIn').addEventListener('click', () => setZoom(zoom + 0.25));
+  $('#nbZoomOut').addEventListener('click', () => setZoom(zoom - 0.25));
+  $('#nbZoomLabel').addEventListener('click', () => setZoom(1));
+  const fingerToggle = $('#nbFinger');
+  fingerToggle.checked = fingerDraws;
+  fingerToggle.addEventListener('change', () => {
+    fingerDraws = fingerToggle.checked;
+    try { localStorage.setItem('lt.notebook.finger', fingerDraws ? '1' : ''); } catch { /* sem armazenamento */ }
+  });
+
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'pen') penSeen = true;
-    // Com caneta em uso, a palma da mão (toque) é ignorada.
-    if (penSeen && e.pointerType === 'touch') return;
-    canvas.setPointerCapture(e.pointerId);
+    // Toque de dedo/palma não risca: move a folha ou dá zoom.
+    // (Exceção: "Desenhar com o dedo" ligado e nenhuma caneta usada ainda.)
+    if (e.pointerType === 'touch' && (!fingerDraws || penSeen || current)) {
+      touchGesture(e, 'down');
+      e.preventDefault();
+      return;
+    }
+    if (current) return;
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* ponteiro já liberado */ }
     const erase = tool === 'borracha' || e.button === 5 || (e.buttons & 32);
     const marker = !erase && tool === 'marca';
     let hex = '#1f1a1d';
@@ -355,6 +440,7 @@ export function initNotebook(deps) {
   });
 
   canvas.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) { touchGesture(e, 'move'); e.preventDefault(); return; }
     if (!current) return;
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of events) {
@@ -367,7 +453,8 @@ export function initNotebook(deps) {
     e.preventDefault();
   });
 
-  const end = () => {
+  const end = (e) => {
+    if (e.pointerType === 'touch' && touches.has(e.pointerId)) { touchGesture(e, 'up'); return; }
     if (current && !current.erase && !current.marker) redraw(ctx, cssW, cssH);
     current = null;
   };
@@ -432,10 +519,10 @@ export function initNotebook(deps) {
       H = Math.round(W * (template.h / template.w));
       background = (g) => g.drawImage(img, 0, 0, W, H);
     } else {
-      W = cssW * 2;
+      W = baseW * 2;
       let maxY = 0;
-      for (const s of ink) for (const p of s.points) maxY = Math.max(maxY, p.y * cssW);
-      H = Math.min(cssH, Math.ceil((maxY + LINE) / LINE) * LINE) * 2;
+      for (const s of ink) for (const p of s.points) maxY = Math.max(maxY, p.y * baseW);
+      H = Math.min(baseH, Math.ceil((maxY + LINE) / LINE) * LINE) * 2;
       background = (g) => {
         g.fillStyle = '#ffffff';
         g.fillRect(0, 0, W, H);

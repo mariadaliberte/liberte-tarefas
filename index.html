@@ -101,8 +101,8 @@
     </div>
 
     <div id="nbDraw" hidden>
-      <p id="nbDrawHint" class="muted small nb-hint">Rascunhe à mão livre. A folha é salva como imagem anexada a uma tarefa. Com a caneta, a palma da mão apoiada é ignorada.</p>
-      <p id="nbFolhaHint" class="muted small nb-hint" hidden>Escreva por cima da sua folha com a caneta. Ao salvar, a página preenchida vira uma tarefa com a imagem anexada.</p>
+      <p id="nbDrawHint" class="muted small nb-hint">Rascunhe à mão livre com a caneta; os dedos só movem a folha e dão zoom, então a mão apoiada não risca. A folha é salva como imagem.</p>
+      <p id="nbFolhaHint" class="muted small nb-hint" hidden>Escreva por cima da sua folha com a caneta; use os dedos para mover e dar zoom (pinça). Ao salvar, a página preenchida vira tarefa ou anotação com a imagem.</p>
 
       <div id="nbFolhaEmpty" class="nb-empty" hidden>
         <p class="nb-eyebrow">Sua folha de gestão</p>
@@ -130,9 +130,20 @@
             <button type="button" id="nbRemoveTemplate" class="btn small ghost danger">Remover modelo</button>
           </span>
         </div>
-        <div id="nbCanvasWrap" class="nb-canvas-wrap">
-          <img id="nbTemplate" alt="" hidden>
-          <canvas id="nbCanvas" class="paper-canvas"></canvas>
+        <div class="row nb-zoom">
+          <span class="nb-zoom-ctrl" role="group" aria-label="Zoom">
+            <button type="button" id="nbZoomOut" class="btn small ghost" aria-label="Diminuir zoom">−</button>
+            <button type="button" id="nbZoomLabel" class="btn small ghost" title="Voltar para 100%">100%</button>
+            <button type="button" id="nbZoomIn" class="btn small ghost" aria-label="Aumentar zoom">+</button>
+          </span>
+          <label class="check small"><input type="checkbox" id="nbFinger"> Desenhar com o dedo</label>
+          <span class="muted small nb-zoom-tip">Com a caneta você escreve; com os dedos você move a folha e dá zoom (pinça).</span>
+        </div>
+        <div id="nbViewport" class="nb-viewport">
+          <div id="nbCanvasWrap" class="nb-canvas-wrap">
+            <img id="nbTemplate" alt="" hidden>
+            <canvas id="nbCanvas" class="paper-canvas"></canvas>
+          </div>
         </div>
         <div class="row nb-save-row">
           <input id="nbDrawTitle" class="nb-title" placeholder="Título (opcional), ex.: ideias para o lançamento sexta">
@@ -163,9 +174,9 @@
   <dialog id="taskDialog" class="sheet">
     <form id="taskForm" method="dialog">
       <div class="sheet-head">
-        <button type="button" class="link" data-close>Fechar</button>
+        <button type="button" class="link" data-close>Cancelar</button>
         <strong id="taskDialogTitle">Tarefa</strong>
-        <button type="submit" class="link strong">Salvar</button>
+        <span class="head-spacer" aria-hidden="true"></span>
       </div>
       <label class="field">
         <span>O que precisa ser feito</span>
@@ -224,9 +235,54 @@
       </div>
       <p id="createdInfo" class="muted small"></p>
       <p id="calendarInfo" class="muted small"></p>
-      <div class="sheet-actions">
-        <button type="button" id="toggleDoneBtn" class="btn">Concluir</button>
-        <button type="button" id="deleteBtn" class="btn danger ghost">Excluir</button>
+      <div class="danger-zone" id="taskDangerZone">
+        <button type="button" id="deleteBtn" class="link danger">Excluir esta tarefa</button>
+      </div>
+      <div class="sheet-footer">
+        <button type="button" id="toggleDoneBtn" class="btn">✓ Concluir</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Compromisso do Google Agenda -->
+  <dialog id="eventDialog" class="sheet">
+    <form id="eventForm" method="dialog">
+      <div class="sheet-head">
+        <button type="button" class="link" data-close>Cancelar</button>
+        <strong id="eventDialogTitle">Compromisso</strong>
+        <span class="head-spacer" aria-hidden="true"></span>
+      </div>
+      <label class="field"><span>Título</span><input name="summary" required placeholder="Ex.: Reunião com cliente"></label>
+      <label class="check"><input type="checkbox" name="allDay"> Dia inteiro</label>
+      <div class="grid3">
+        <label class="field"><span>Data</span><input type="date" name="date" required></label>
+        <label class="field ev-time"><span>Início</span><input type="time" name="start"></label>
+        <label class="field ev-time"><span>Fim</span><input type="time" name="end"></label>
+      </div>
+      <label class="field"><span>Local ou link</span><input name="location" placeholder="Opcional"></label>
+      <label class="field"><span>Descrição</span><textarea name="description" rows="3" placeholder="Opcional"></textarea></label>
+      <label class="field" id="eventCalendarField"><span>Agenda</span><select name="calendarId"></select></label>
+      <p id="eventInfo" class="muted small"></p>
+      <div class="danger-zone" id="eventDangerZone">
+        <button type="button" id="eventDeleteBtn" class="link danger">Excluir este compromisso</button>
+      </div>
+      <div class="sheet-footer">
+        <a id="eventOpenGoogle" class="btn" target="_blank" rel="noopener">Abrir no Google</a>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Pessoa -->
+  <dialog id="personDialog" class="confirm">
+    <form id="personForm" method="dialog">
+      <h3 class="dlg-title" id="personDialogTitle">Nova pessoa</h3>
+      <label class="field"><span>Nome</span><input name="name" required placeholder="Ex.: Ana"></label>
+      <label class="field"><span>E-mail (opcional, para convites na agenda)</span><input name="email" type="email" placeholder="ana@empresa.com"></label>
+      <div class="row end">
+        <button type="button" class="btn ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
       </div>
     </form>
   </dialog>
