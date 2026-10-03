@@ -29,13 +29,15 @@
     </button>
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-view="tudo" aria-selected="true">Tudo</button>
-    <button role="tab" data-view="agenda">Agenda</button>
-    <button role="tab" data-view="projetos">Projetos</button>
-    <button role="tab" data-view="pessoas">Pessoas</button>
-    <button role="tab" data-view="feitas">Feitas</button>
-    <button role="tab" data-view="caderno">✍︎ Caderno</button>
+  <nav class="tabs" role="tablist" aria-label="Seções">
+    <div class="nav-brand"><img src="icons/icon.svg" alt="" width="30" height="30"><strong>Liberte Tarefas</strong></div>
+    <button role="tab" data-view="tudo" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h2v2H4V6Zm4 0h12v2H8V6Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Zm-4 5h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg><span>Tudo</span></button>
+    <button role="tab" data-view="agenda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2Zm12 8H5v9h14v-9ZM5 8h14V6H5v2Zm2 4h4v4H7v-4Z"/></svg><span>Agenda</span></button>
+    <button role="tab" data-view="projetos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a1 1 0 0 1 1-1h6l2 2h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5Zm2 1v12h14V8h-7.83l-2-2H5Z"/></svg><span>Projetos</span></button>
+    <button role="tab" data-view="pessoas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm7.5 3a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7ZM2 20c0-3.3 3.1-6 7-6s7 2.7 7 6h-2c0-2.2-2.2-4-5-4s-5 1.8-5 4H2Zm16 0c0-1.4-.4-2.6-1.2-3.6 2.4.3 4.2 1.8 4.2 3.6h-3Z"/></svg><span>Pessoas</span></button>
+    <button role="tab" data-view="feitas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20Zm0-2a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm-1-5.4 5.3-5.3 1.4 1.4-6.7 6.7-3.9-3.9 1.4-1.4 2.5 2.5Z"/></svg><span>Feitas</span></button>
+    <button role="tab" data-view="caderno"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12a2 2 0 0 1 2 2v3.6l-2 2V5H5v14h12v-2.6l2-2V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm16.7 6.3 1.4 1.4-8.4 8.4H13.3v-1.4l8.4-8.4ZM7 7h8v2H7V7Zm0 4h6v2H7v-2Z"/></svg><span>Caderno</span></button>
+    <button type="button" class="nav-settings" data-open-settings><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.5.1-1-.1-1 2.1-1.6-2-3.5-2.5 1a7 7 0 0 0-1.7-1L15 2h-4l-.4 2.6a7 7 0 0 0-1.7 1l-2.5-1-2 3.5L6.5 11l-.1 1 .1 1-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1L11 22h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5-2.1-1.6Z"/></svg><span>Ajustes</span></button>
   </nav>
 
   <section class="filters">
@@ -49,6 +51,9 @@
     </select>
     <select id="filterPerson" aria-label="Filtrar por responsável">
       <option value="">Todos</option>
+    </select>
+    <select id="filterProject" aria-label="Filtrar por projeto">
+      <option value="">Todo projeto</option>
     </select>
   </section>
 
@@ -191,7 +196,10 @@
           <option value="none">Sem lembrete</option>
         </select>
       </label>
-      <label class="field"><span>Projeto</span><select name="projectId"></select></label>
+      <div class="grid2">
+        <label class="field"><span>Projeto</span><select name="projectId"></select></label>
+        <label class="field"><span>Começa em (cronograma)</span><input type="date" name="startDate"></label>
+      </div>
       <p id="taskFromNote" class="muted small" hidden></p>
       <label class="field"><span>Observações</span><textarea name="notes" rows="3"></textarea></label>
       <div class="field">
@@ -279,6 +287,10 @@
       </div>
       <label class="field"><span>Nome do projeto</span><input name="name" required placeholder="Ex.: Lançamento da Mentoria Fluir"></label>
       <label class="field"><span>Objetivo ou descrição</span><textarea name="description" rows="3" placeholder="Opcional"></textarea></label>
+      <div class="grid2">
+        <label class="field"><span>Início do projeto</span><input type="date" name="startDate"></label>
+        <label class="field"><span>Entrega do projeto</span><input type="date" name="endDate"></label>
+      </div>
       <div class="field"><span>Cor</span><div id="projectColors" class="color-choices"></div></div>
       <label class="check" id="archiveRow"><input type="checkbox" name="archived"> Arquivar (projeto encerrado)</label>
       <p class="muted small">Dica: escreva <b>#nome-do-projeto</b> em qualquer tarefa para colocá-la no projeto.</p>

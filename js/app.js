@@ -88,6 +88,10 @@ function matchesFilters(t) {
   if (state.person) {
     if (state.person === '__eu' ? t.assignee : t.assignee !== state.person) return false;
   }
+  // Dentro de um projeto o filtro de projeto não se aplica.
+  if (state.project && state.view !== 'projetos') {
+    if (state.project === '__sem' ? store.getProject(t.projectId) : t.projectId !== state.project) return false;
+  }
   if (state.search) {
     const q = state.search.toLowerCase();
     if (![t.title, t.notes, t.assignee].some((x) => x && x.toLowerCase().includes(q))) return false;
@@ -279,8 +283,7 @@ function render() {
     return;
   }
   const project = store.getProject(currentProjectId());
-  const shortName = project && project.name.length > 18 ? `${project.name.slice(0, 17).trim()}…` : project?.name;
-  input.placeholder = project ? `Tarefa em ${shortName}` : 'Anote, fale ou fotografe…';
+  input.placeholder = project ? 'Nova tarefa do projeto…' : 'Anote, fale ou fotografe…';
   const all = store.allTasks().filter(matchesFilters);
   const open = all.filter((t) => t.status !== 'feita');
   const views = { tudo: renderTudo, agenda: renderAgenda, pessoas: renderPessoas };
@@ -306,6 +309,12 @@ function renderPeopleFilter() {
   const people = store.knownPeople();
   sel.innerHTML = `<option value="">Todos</option><option value="__eu">Comigo</option>${people.map((p) => `<option>${esc(p)}</option>`).join('')}`;
   sel.value = people.includes(current) || current === '__eu' ? current : '';
+  const ps = $('#filterProject');
+  const curProject = ps.value;
+  const projs = store.allProjects({ includeArchived: false });
+  ps.innerHTML = `<option value="">Todo projeto</option><option value="__sem">Sem projeto</option>${projs.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}`;
+  ps.value = projs.some((p) => p.id === curProject) || curProject === '__sem' ? curProject : '';
+  state.project = ps.value;
   $('#peopleList').innerHTML = people.map((p) => `<option value="${esc(p)}">`).join('');
 }
 
@@ -591,6 +600,7 @@ function openTask(id, { focusTitle = false } = {}) {
   const projs = store.allProjects();
   f.projectId.innerHTML = `<option value="">Sem projeto</option>${projs.map((p) => `<option value="${p.id}">${esc(p.name)}${p.status === 'arquivado' ? ' (arquivado)' : ''}</option>`).join('')}`;
   f.projectId.value = store.getProject(t.projectId)?.id || '';
+  f.startDate.value = t.startDate || '';
   const fromNote = t.noteId ? store.getNote(t.noteId) : null;
   $('#taskFromNote').hidden = !fromNote;
   if (fromNote) $('#taskFromNote').innerHTML = `Veio da anotação <button type="button" class="link" data-open-note="${fromNote.id}">“${esc(fromNote.title || 'sem título')}”</button>`;
@@ -634,6 +644,7 @@ taskForm.addEventListener('submit', (e) => {
     reminders: rem === '' ? null : rem === 'none' ? [] : rem.split(',').map(Number),
     notes: f.notes.value.trim(),
     projectId: f.projectId.value || null,
+    startDate: f.startDate.value && date && f.startDate.value < date ? f.startDate.value : null,
   });
   if (assignee && assigneeEmail) store.rememberPerson(assignee, assigneeEmail);
   sync.scheduleSync();
@@ -694,12 +705,12 @@ $('#list').addEventListener('click', (e) => {
   openTask(card.dataset.id);
 });
 
-for (const tab of $$('.tabs button')) {
+for (const tab of $$('.tabs [data-view]')) {
   tab.addEventListener('click', () => {
     // Tocar em "Projetos" de dentro de um projeto volta para a lista.
     if (tab.dataset.view === 'projetos' && state.view === 'projetos') state.projectId = null;
     state.view = tab.dataset.view;
-    $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
+    $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
     if (state.view === 'agenda') loadAgenda();
     render();
     window.scrollTo({ top: 0 });
@@ -708,6 +719,7 @@ for (const tab of $$('.tabs button')) {
 $('#search').addEventListener('input', (e) => { state.search = e.target.value.trim(); render(); });
 $('#filterPriority').addEventListener('change', (e) => { state.priority = e.target.value; render(); });
 $('#filterPerson').addEventListener('change', (e) => { state.person = e.target.value; render(); });
+$('#filterProject').addEventListener('change', (e) => { state.project = e.target.value; render(); });
 
 for (const btn of $$('[data-close]')) btn.addEventListener('click', () => btn.closest('dialog').close());
 for (const dlg of $$('dialog')) {
@@ -777,6 +789,7 @@ function openSettings() {
 }
 
 $('#openSettings').addEventListener('click', openSettings);
+for (const b of $$('[data-open-settings]')) b.addEventListener('click', openSettings);
 $('#addPerson').addEventListener('click', () => $('#peopleEditor').appendChild(personRow()));
 
 function readSettingsForm() {
@@ -959,7 +972,7 @@ $('#taskFromNote').addEventListener('click', (e) => {
 
 function selectTab(view) {
   state.view = view;
-  $$('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === view)));
+  $$('.tabs [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === view)));
 }
 
 function openNotebookFor(projectId) {

@@ -1,6 +1,11 @@
 // Projetos: cada projeto reúne tarefas e um caderno de anotações próprio.
 // Linhas de uma anotação podem virar tarefas do projeto.
 
+import { buildTimeline } from './timeline.js';
+
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const WEEK = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+
 export function initProjects(deps) {
   const {
     $, esc, store, sync, state, render, taskCard, sortTasks, group, parseInput, createFromText,
@@ -83,6 +88,94 @@ export function initProjects(deps) {
     return html;
   }
 
+  // ---------- Cronograma ----------
+
+  function brDate(date) {
+    const [, m, d] = date.split('-');
+    return `${d}/${m}`;
+  }
+
+  function renderTimeline(p, tasks) {
+    const tl = buildTimeline(tasks, p, todayStr());
+    if (!tl.rows.length) {
+      return `<div class="empty"><b>O cronograma aparece quando as tarefas têm data</b>
+        Dê um prazo às tarefas do projeto (e, se quiser, uma data de início para virar barra).<br>
+        Defina também o início e a entrega do projeto em “Editar”.</div>`;
+    }
+    const zoom = state.timelineZoom || 'dias';
+    const dayW = zoom === 'dias' ? 34 : 12;
+    const n = tl.days.length;
+
+    // Cabeçalho: meses e, abaixo, dias (no zoom "semanas" só as segundas-feiras).
+    const months = [];
+    for (const [i, d] of tl.days.entries()) {
+      const last = months[months.length - 1];
+      if (!last || last.month !== d.month) months.push({ month: d.month, year: d.year, start: i, span: 1 });
+      else last.span++;
+    }
+    const monthCells = months.map((m) => `<div class="g-month" style="grid-column:${m.start + 1} / span ${m.span}"><span>${MONTHS[m.month]}${m.span * dayW > 70 ? ` ${m.year}` : ''}</span></div>`).join('');
+    const dayCells = tl.days.map((d, i) => {
+      const label = zoom === 'dias' ? `<b>${d.day}</b><i>${WEEK[d.weekday]}</i>` : d.weekday === 1 ? `<b>${d.day}</b>` : '';
+      return `<div class="g-day${i === tl.todayIdx ? ' today' : ''}${d.weekday === 0 || d.weekday === 6 ? ' weekend' : ''}" style="grid-column:${i + 1}">${label}</div>`;
+    }).join('');
+
+    const weekends = tl.days.map((d, i) => (d.weekday === 0 || d.weekday === 6
+      ? `<span class="g-weekend" style="left:calc(${i} * var(--day))"></span>` : '')).join('');
+    const marks = [
+      `<span class="g-line today" style="left:calc(${tl.todayIdx + 0.5} * var(--day))" title="Hoje"></span>`,
+      tl.projectStartIdx != null ? `<span class="g-line start" style="left:calc(${tl.projectStartIdx} * var(--day))" title="Início do projeto: ${brDate(p.startDate)}"></span>` : '',
+      tl.projectEndIdx != null ? `<span class="g-line end" style="left:calc(${tl.projectEndIdx + 1} * var(--day))" title="Entrega do projeto: ${brDate(p.endDate)}"><em>Entrega ${brDate(p.endDate)}</em></span>` : '',
+    ].join('');
+
+    const rows = tl.rows.map((r) => {
+      const t = r.task;
+      const cls = `${r.done ? ' done' : ''}${r.late ? ' late' : ''} prio-${t.priority}`;
+      const range = r.kind === 'bar' ? `${brDate(r.start)} → ${brDate(r.end)}` : brDate(r.end);
+      const mark = r.kind === 'bar'
+        ? `<button type="button" class="g-bar${cls}" data-task="${t.id}" style="left:calc(${r.startIdx} * var(--day) + 2px);width:calc(${r.endIdx - r.startIdx + 1} * var(--day) - 4px)" title="${esc(t.title)} · ${range}"><span>${(r.endIdx - r.startIdx + 1) * dayW > 90 ? esc(t.title) : ''}</span></button>`
+        : `<button type="button" class="g-milestone${cls}" data-task="${t.id}" style="left:calc(${r.endIdx + 0.5} * var(--day))" title="${esc(t.title)} · ${range}" aria-label="${esc(t.title)}, ${range}"></button>`;
+      return `<div class="g-row">
+          <button type="button" class="g-label${r.done ? ' done' : ''}" data-task="${t.id}">
+            <span class="g-title">${esc(t.title)}</span>
+            <span class="g-meta">${range}${t.assignee ? ` · ${esc(t.assignee)}` : ''}${r.late ? ' · <b>atrasada</b>' : ''}</span>
+          </button>
+          <div class="g-track">${mark}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="row g-toolbar">
+        <div class="seg g-zoom" role="radiogroup" aria-label="Escala">
+          <label><input type="radio" name="gzoom" value="dias" ${zoom === 'dias' ? 'checked' : ''}><span>Dias</span></label>
+          <label><input type="radio" name="gzoom" value="semanas" ${zoom === 'semanas' ? 'checked' : ''}><span>Semanas</span></label>
+        </div>
+        <button type="button" class="btn small ghost" data-action="timeline-today">Ir para hoje</button>
+      </div>
+      <div class="gantt-scroll" id="ganttScroll" data-today="${tl.todayIdx}" data-day="${dayW}">
+        <div class="gantt" style="--day:${dayW}px;--days:${n}">
+          <div class="g-head">
+            <div class="g-corner">Tarefa</div>
+            <div class="g-scale">
+              <div class="g-months">${monthCells}</div>
+              <div class="g-days">${dayCells}</div>
+            </div>
+          </div>
+          <div class="g-body">
+            <div class="g-layer">${weekends}${marks}</div>
+            ${rows}
+          </div>
+        </div>
+      </div>
+      <p class="muted small g-legend">
+        <span class="lg bar"></span> do início ao prazo
+        <span class="lg ms"></span> data ou marco
+        <span class="lg late"></span> atrasada
+        <span class="lg today"></span> hoje
+        ${p.endDate ? '<span class="lg end"></span> entrega do projeto' : ''}
+      </p>
+      <p class="muted small">Toque numa tarefa para editar. Para virar barra, preencha “Começa em” na tarefa.${tl.undated ? ` ${tl.undated} tarefa${tl.undated > 1 ? 's' : ''} sem data não aparece${tl.undated > 1 ? 'm' : ''} aqui.` : ''}</p>`;
+  }
+
   // ---------- Página do projeto ----------
 
   function noteCard(n) {
@@ -113,7 +206,9 @@ export function initProjects(deps) {
     const notes = store.projectNotes(p.id);
 
     let body = '';
-    if (tab === 'tarefas') {
+    if (tab === 'cronograma') {
+      body = renderTimeline(p, store.projectTasks(p.id));
+    } else if (tab === 'tarefas') {
       body = group('Abertas', open) + group('Concluídas', done)
         || '<div class="empty"><b>Nenhuma tarefa neste projeto</b>Escreva na barra de baixo: a tarefa entra direto aqui.<br>Ou gere tarefas a partir de uma anotação.</div>';
     } else {
@@ -138,9 +233,10 @@ export function initProjects(deps) {
           <button type="button" class="btn ghost" data-action="edit-project">Editar</button>
         </div>
         ${progress(st)}
-        <p class="muted small">${st.done} de ${st.total} tarefas concluídas${st.late ? ` · <b class="late-text">${st.late} atrasada${st.late > 1 ? 's' : ''}</b>` : ''} · ${st.notes} anotações</p>
+        <p class="muted small">${p.startDate || p.endDate ? `${p.startDate ? `Início ${brDate(p.startDate)}` : ''}${p.startDate && p.endDate ? ' · ' : ''}${p.endDate ? `Entrega ${brDate(p.endDate)}` : ''} · ` : ''}${st.done} de ${st.total} tarefas concluídas${st.late ? ` · <b class="late-text">${st.late} atrasada${st.late > 1 ? 's' : ''}</b>` : ''} · ${st.notes} anotações</p>
         <div class="seg pd-tabs" role="tablist">
           <label><input type="radio" name="ptab" value="tarefas" ${tab === 'tarefas' ? 'checked' : ''}><span>Tarefas (${st.open})</span></label>
+          <label><input type="radio" name="ptab" value="cronograma" ${tab === 'cronograma' ? 'checked' : ''}><span>Cronograma</span></label>
           <label><input type="radio" name="ptab" value="anotacoes" ${tab === 'anotacoes' ? 'checked' : ''}><span>Anotações (${st.notes})</span></label>
         </div>
         ${body}
@@ -154,7 +250,15 @@ export function initProjects(deps) {
   }
 
   // Miniaturas das anotações (as das tarefas o app já carrega).
+  function scrollToToday(root, smooth = false) {
+    const sc = root.querySelector('#ganttScroll');
+    if (!sc) return;
+    const left = (Number(sc.dataset.today) - 3) * Number(sc.dataset.day);
+    sc.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
+  }
+
   function hydrate(root) {
+    scrollToToday(root);
     for (const img of root.querySelectorAll('img[data-note-file]')) {
       const note = store.getNote(img.closest('[data-note]').dataset.note);
       const att = note?.attachments.find((a) => a.id === img.dataset.noteFile);
@@ -171,6 +275,9 @@ export function initProjects(deps) {
     if (action === 'back-projects') { state.projectId = null; render(); window.scrollTo({ top: 0 }); return; }
     if (action === 'new-note') return openNote(null);
     if (action === 'note-notebook') return deps.openNotebookFor(state.projectId);
+    if (action === 'timeline-today') return scrollToToday(document, true);
+    const tb = e.target.closest('[data-task]');
+    if (tb) return openTask(tb.dataset.task);
     const pc = e.target.closest('[data-project]');
     if (pc) {
       state.projectId = pc.dataset.project;
@@ -186,6 +293,10 @@ export function initProjects(deps) {
   function onListChange(e) {
     if (e.target.name === 'ptab') {
       state.projectTab = e.target.value;
+      render();
+    }
+    if (e.target.name === 'gzoom') {
+      state.timelineZoom = e.target.value;
       render();
     }
   }
@@ -209,6 +320,8 @@ export function initProjects(deps) {
     projectForm.name.value = p?.name || '';
     projectForm.description.value = p?.description || '';
     projectForm.archived.checked = p?.status === 'arquivado';
+    projectForm.startDate.value = p?.startDate || '';
+    projectForm.endDate.value = p?.endDate || '';
     renderColorChoices(p?.color || store.PROJECT_COLORS[store.allProjects().length % store.PROJECT_COLORS.length]);
     $('#projectDialogTitle').textContent = p ? 'Editar projeto' : 'Novo projeto';
     $('#deleteProjectBtn').hidden = !p;
@@ -224,6 +337,8 @@ export function initProjects(deps) {
       description: projectForm.description.value.trim(),
       color: projectForm.color.value || store.PROJECT_COLORS[0],
       status: projectForm.archived.checked ? 'arquivado' : 'ativo',
+      startDate: projectForm.startDate.value || null,
+      endDate: projectForm.endDate.value || null,
     };
     if (editingProjectId) {
       // O nome do projeto vai na descrição dos eventos: a sincronização atualiza a Agenda.

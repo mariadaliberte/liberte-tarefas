@@ -29,7 +29,10 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
   - Cada projeto mostra progresso, tarefas atrasadas e a próxima data.
   - Dentro do projeto, tudo que você escreve na barra de baixo vira tarefa do projeto. Em qualquer tela, `#nome` coloca a tarefa no projeto (ex.: `gravar vídeo sexta #lancamento`).
   - **Anotações** funcionam como o caderno do projeto: texto, fotos, páginas da sua folha e PDFs. Marque linhas da anotação para virarem tarefas do projeto (data, prioridade e @responsável são lidos da linha).
+  - **Cronograma:** visão de cronograma do projeto (estilo Gantt), com escala por dias ou semanas. Tarefa com “Começa em” e prazo vira barra; tarefa só com data vira marco (losango). Mostra hoje, fins de semana, atrasadas em vermelho e as datas de início e entrega do projeto (definidas em “Editar”). Toque numa barra para editar a tarefa.
+  - As tarefas de projeto também aparecem nas listas gerais (Tudo, Agenda, Pessoas) com a etiqueta do projeto; o filtro “Todo projeto” mostra só as de um projeto.
   - No Caderno, escolha em “Salvar em” se o que você escreveu ou desenhou vira tarefa solta, tarefa de um projeto ou anotação de um projeto.
+- **Tablet e computador:** menu fixo na lateral esquerda (a partir de 768px de largura, inclusive tablet em pé).
 - **Caneta, marca-texto e borracha:** 6 cores de caneta e 5 de marca-texto no modo Desenhar e em Minha folha.
 - **Revisão diária:** em Ajustes, cria um lembrete recorrente (seg a sex) para revisar as tarefas sem data.
 - **Nada se perde:** tudo é salvo no aparelho na hora, inclusive sem internet, e copiado para o seu Google Drive (pasta oculta do app + pasta “Liberte Tarefas - Anexos” para fotos e áudios). Abre no celular e no computador com os mesmos dados.
@@ -97,4 +100,6 @@ Arquivos principais:
 - `js/store.js` — armazenamento no aparelho
 - `js/app.js` — interface
 - `js/notebook.js` — modo Caderno (escrita e desenho com caneta)
+- `js/projects.js` — projetos, anotações e cronograma
+- `js/timeline.js` — cálculo do cronograma
 - `css/styles.css` — visual (cores da marca no topo do arquivo)
