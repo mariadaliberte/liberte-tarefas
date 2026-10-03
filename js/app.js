@@ -240,6 +240,7 @@ function renderTudo(open) {
     else if (t.date <= week) buckets.week.push(t);
     else buckets.later.push(t);
   }
+  const actions = '<div class="list-actions"><button type="button" class="btn primary" data-new-task>+ Nova tarefa</button></div>';
   const html = [
     group('Atrasadas', buckets.late.sort(sortTasks), { cls: 'overdue' }),
     group('Hoje', buckets.today.sort(sortTasks)),
@@ -248,7 +249,7 @@ function renderTudo(open) {
     group('Mais adiante', buckets.later.sort(sortTasks)),
     group('Sem data', buckets.none.sort(sortByPriority)),
   ].join('');
-  return html || emptyState();
+  return actions + (html || emptyState());
 }
 
 // ---------- Agenda no formato do Google Agenda ----------
@@ -260,6 +261,77 @@ const GCAL_COLORS = {
 const WEEKDAY_SHORT = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 const MONTH_LONG = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const MONTH_SHORT = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+
+let agendaHour = null;
+function hourH() {
+  if (agendaHour == null) agendaHour = Number(localGet('lt.agenda.hour')) || week.HOUR_HEIGHT;
+  return agendaHour;
+}
+
+// Zoom da agenda: muda só a altura da hora (sem redesenhar), mantendo o horário sob o dedo.
+function setHourHeight(next, anchorY) {
+  const body = $('#wkBody');
+  const wk = body?.closest('.wk');
+  if (!wk) return;
+  const h = Math.max(24, Math.min(140, next));
+  const old = hourH();
+  const ay = anchorY ?? body.clientHeight / 2;
+  const time = (body.scrollTop + ay) / old;
+  agendaHour = h;
+  wk.style.setProperty('--hour', `${h}px`);
+  body.scrollTop = time * h - ay;
+  state.agendaScroll = body.scrollTop;
+  clearTimeout(setHourHeight.t);
+  setHourHeight.t = setTimeout(() => localSet('lt.agenda.hour', String(Math.round(h))), 300);
+}
+
+// Arrastar para o lado troca de semana; pinça com dois dedos dá zoom.
+function bindAgendaGestures(body) {
+  let start = null;
+  let pinch = null;
+  body.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const [a, b] = e.touches;
+      const r = body.getBoundingClientRect();
+      pinch = { dist: Math.abs(a.clientY - b.clientY) + Math.abs(a.clientX - b.clientX), h: hourH(), y: (a.clientY + b.clientY) / 2 - r.top };
+      start = null;
+    } else if (e.touches.length === 1) {
+      start = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+    }
+  }, { passive: true });
+  body.addEventListener('touchmove', (e) => {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      const [a, b] = e.touches;
+      const dist = Math.abs(a.clientY - b.clientY) + Math.abs(a.clientX - b.clientX);
+      if (pinch.dist > 20) setHourHeight(pinch.h * (dist / pinch.dist), pinch.y);
+    }
+  }, { passive: false });
+  body.addEventListener('touchend', (e) => {
+    if (pinch && e.touches.length < 2) { pinch = null; return; }
+    if (!start || e.changedTouches.length !== 1) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    const quick = Date.now() - start.t < 700;
+    start = null;
+    if (quick && Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      e.preventDefault();
+      swipeAgenda(dx < 0 ? 1 : -1);
+    }
+  });
+  body.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    setHourHeight(hourH() * (e.deltaY < 0 ? 1.1 : 0.9), e.clientY - body.getBoundingClientRect().top);
+  }, { passive: false });
+}
+
+function swipeAgenda(dir) {
+  state.agendaAnchor = week.shiftAnchor(state.agendaAnchor || todayStr(), agendaMode(), dir);
+  state.agendaSlide = dir;
+  render();
+  loadAgenda();
+}
 
 function agendaMode() {
   return state.agendaMode || (window.innerWidth >= 768 ? 'semana' : '3dias');
@@ -290,6 +362,8 @@ function itemColor(it) {
 }
 
 function renderAgenda() {
+  const slide = state.agendaSlide;
+  setTimeout(() => { if (state.agendaSlide === slide) state.agendaSlide = 0; }, 0);
   const days = agendaDays();
   const today = todayStr();
   const settings = store.getSettings();
@@ -300,7 +374,7 @@ function renderAgenda() {
     appointmentMinutes: settings.appointmentMinutes,
   });
   const late = tasks.filter((t) => t.status !== 'feita' && t.date && t.date < today).length;
-  const H = week.HOUR_HEIGHT;
+  const H = hourH();
   const mode = agendaMode();
 
   const head = days.map((d) => {
@@ -317,35 +391,39 @@ function renderAgenda() {
   };
   const allDay = days.map((d) => `<div class="wk-allday-cell">${items.filter((i) => i.allDay && i.day === d).map(chip).join('')}</div>`).join('');
 
-  const hours = Array.from({ length: 24 }, (_, h) => `<div class="wk-hour" style="top:${h * H}px"><span>${h ? `${String(h).padStart(2, '0')}:00` : ''}</span></div>`).join('');
+  const hours = Array.from({ length: 24 }, (_, h) => `<div class="wk-hour" style="top:calc(var(--hour) * ${h})"><span>${h ? `${String(h).padStart(2, '0')}:00` : ''}</span></div>`).join('');
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
   const cols = days.map((d) => {
     const placed = week.layoutDay(items.filter((i) => !i.allDay && i.day === d));
     const blocks = placed.map((it) => {
-      const top = (it.startMin / 60) * H;
       const height = Math.max(((it.endMin - it.startMin) / 60) * H - 2, 18);
       const done = it.kind === 'tarefa' && it.ref.status === 'feita';
       const attr = it.kind === 'tarefa' ? `data-task="${it.id}"` : `data-event="${esc(it.id)}"`;
       const short = height < 34;
       const who = it.kind === 'tarefa' && it.ref.assignee ? ` · ${esc(it.ref.assignee)}` : '';
       return `<button type="button" class="wk-event${done ? ' done' : ''}${it.kind === 'tarefa' && it.ref.kind !== 'compromisso' ? ' task' : ''}${short ? ' short' : ''}" ${attr}
-        style="top:${top}px;height:${height}px;left:calc(${(it.lane / it.lanes) * 100}% + 1px);width:calc(${100 / it.lanes}% - 3px);--c:${itemColor(it)}">
+        style="top:calc(var(--hour) * ${it.startMin / 60});height:max(18px, calc(var(--hour) * ${(it.endMin - it.startMin) / 60} - 2px));left:calc(${(it.lane / it.lanes) * 100}% + 1px);width:calc(${100 / it.lanes}% - 3px);--c:${itemColor(it)}">
         <b>${esc(it.title)}</b>${short ? ` <i>${hhmm(it.startMin)}</i>` : `<i>${hhmm(it.startMin)} – ${hhmm(it.endMin)}${who}</i>`}
       </button>`;
     }).join('');
-    const nowLine = d === today ? `<div class="wk-now" style="top:${(nowMin / 60) * H}px"></div>` : '';
+    const nowLine = d === today ? `<div class="wk-now" style="top:calc(var(--hour) * ${nowMin / 60})"></div>` : '';
     return `<div class="wk-col${d === today ? ' today' : ''}" data-day="${d}">${blocks}${nowLine}</div>`;
   }).join('');
 
   return `
-    <div class="wk" style="--days:${days.length};--hour:${H}px">
+    <div class="wk${state.agendaSlide ? (state.agendaSlide > 0 ? ' slide-next' : ' slide-prev') : ''}" style="--days:${days.length};--hour:${H}px">
       <div class="wk-toolbar">
+        <button type="button" class="btn small primary" data-wk="new">+ Novo</button>
         <button type="button" class="btn small" data-wk="today">Hoje</button>
         <button type="button" class="icon-btn small-icon" data-wk="prev" aria-label="Anterior">‹</button>
         <button type="button" class="icon-btn small-icon" data-wk="next" aria-label="Próximo">›</button>
         <h2 class="wk-title">${(() => { const t = agendaTitle(days); return t.charAt(0).toUpperCase() + t.slice(1); })()}</h2>
+        <span class="nb-zoom-ctrl wk-zoom" role="group" aria-label="Zoom da agenda">
+          <button type="button" class="btn small ghost" data-wk="zoomout" aria-label="Diminuir zoom">−</button>
+          <button type="button" class="btn small ghost" data-wk="zoomin" aria-label="Aumentar zoom">+</button>
+        </span>
         <div class="seg wk-mode" role="radiogroup" aria-label="Visão">
           <label><input type="radio" name="wkmode" value="dia" ${mode === 'dia' ? 'checked' : ''}><span>Dia</span></label>
           <label><input type="radio" name="wkmode" value="3dias" ${mode === '3dias' ? 'checked' : ''}><span>3 dias</span></label>
@@ -358,7 +436,7 @@ function renderAgenda() {
         <div class="wk-head"><div class="wk-gutter"></div>${head}</div>
         <div class="wk-allday"><div class="wk-gutter small muted">dia todo</div>${allDay}</div>
         <div class="wk-body" id="wkBody">
-          <div class="wk-inner" style="height:${24 * H}px">
+          <div class="wk-inner">
             <div class="wk-hours">${hours}</div>
             <div class="wk-cols">${cols}</div>
           </div>
@@ -374,9 +452,22 @@ function renderPessoas(open) {
     if (!byPerson.has(key)) byPerson.set(key, []);
     byPerson.get(key).push(t);
   }
+  // Pessoas cadastradas aparecem mesmo sem tarefas.
+  for (const p of store.getSettings().people) if (!byPerson.has(p.name)) byPerson.set(p.name, []);
   const keys = [...byPerson.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'pt-BR')));
-  const html = keys.map((k) => group(k || 'Comigo', byPerson.get(k).sort(sortByPriority))).join('');
-  return html || emptyState();
+  const html = keys.map((k) => {
+    const items = byPerson.get(k).sort(sortByPriority);
+    const email = k ? store.personEmail(k) : '';
+    return `<div class="person-head">
+        <div><span class="person-name">${esc(k || 'Comigo')}</span>${email ? `<span class="muted small"> · ${esc(email)}</span>` : ''}
+          <span class="muted small"> · ${items.length} aberta${items.length === 1 ? '' : 's'}</span></div>
+        <div class="row">
+          ${k ? `<button type="button" class="link small" data-edit-person="${esc(k)}">Editar</button>` : ''}
+          <button type="button" class="btn small ghost" data-new-task data-assignee="${esc(k)}">+ Tarefa</button>
+        </div>
+      </div>${items.map(taskCard).join('') || '<p class="muted small person-empty">Nenhuma tarefa em aberto.</p>'}`;
+  }).join('');
+  return `<div class="list-actions"><button type="button" class="btn primary" data-new-person>+ Nova pessoa</button></div>${html || emptyState()}`;
 }
 
 function renderFeitas(all) {
@@ -417,8 +508,9 @@ function render() {
   if (state.view === 'agenda') {
     const body = $('#wkBody');
     // Abre na hora atual (ou 7h), e mantém a rolagem entre atualizações.
-    const nowTop = (new Date().getHours() - 1.5) * week.HOUR_HEIGHT;
-    body.scrollTop = state.agendaScroll ?? Math.max(7 * week.HOUR_HEIGHT, Math.min(nowTop, 16 * week.HOUR_HEIGHT));
+    const nowTop = (new Date().getHours() - 1.5) * hourH();
+    body.scrollTop = state.agendaScroll ?? Math.max(7 * hourH(), Math.min(nowTop, 16 * hourH()));
+    bindAgendaGestures(body);
     body.addEventListener('scroll', () => { state.agendaScroll = body.scrollTop; }, { passive: true });
   }
 
@@ -715,10 +807,16 @@ async function renderAttachments(task) {
   if (!task.attachments?.length) box.innerHTML = '<span class="muted small">Nenhum anexo.</span>';
 }
 
-function openTask(id, { focusTitle = false } = {}) {
-  const t = store.getTask(id);
+// Abre a tarefa para edição, ou uma tarefa nova (id nulo) com campos pré-preenchidos.
+function openTask(id, { focusTitle = false, prefill = {} } = {}) {
+  const isNew = !id;
+  const t = isNew
+    ? { title: '', kind: 'tarefa', priority: 'normal', attachments: [], status: 'aberta', createdAt: new Date().toISOString(), ...prefill }
+    : store.getTask(id);
   if (!t) return;
-  state.editingId = id;
+  state.editingId = id || null;
+  $('#toggleDoneBtn').hidden = isNew;
+  $('#taskDangerZone').hidden = isNew;
   const f = taskForm;
   f.title.value = t.title;
   f.kind.value = t.kind;
@@ -737,9 +835,10 @@ function openTask(id, { focusTitle = false } = {}) {
   const fromNote = t.noteId ? store.getNote(t.noteId) : null;
   $('#taskFromNote').hidden = !fromNote;
   if (fromNote) $('#taskFromNote').innerHTML = `Veio da anotação <button type="button" class="link" data-open-note="${fromNote.id}">“${esc(fromNote.title || 'sem título')}”</button>`;
-  $('#taskDialogTitle').textContent = t.kind === 'compromisso' ? 'Compromisso' : 'Tarefa';
-  $('#toggleDoneBtn').textContent = t.status === 'feita' ? 'Reabrir' : 'Concluir ✓';
+  $('#taskDialogTitle').textContent = isNew ? 'Nova tarefa' : t.kind === 'compromisso' ? 'Compromisso' : 'Tarefa';
+  $('#toggleDoneBtn').textContent = t.status === 'feita' ? '↺ Reabrir' : '✓ Concluir';
   const created = new Date(t.createdAt);
+  $('#createdInfo').hidden = isNew;
   $('#createdInfo').textContent = `Criada em ${created.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })} às ${created.toTimeString().slice(0, 5)}${SOURCE_LABEL[t.source] ? ` · ${SOURCE_LABEL[t.source]}` : ''}${t.doneAt && t.status === 'feita' ? ` · concluída em ${new Date(t.doneAt).toLocaleDateString('pt-BR')}` : ''}`;
   const info = $('#calendarInfo');
   if (t.calendar?.link) info.innerHTML = `No Google Agenda · <a href="${esc(t.calendar.link)}" target="_blank" rel="noopener">abrir evento</a>`;
@@ -748,7 +847,12 @@ function openTask(id, { focusTitle = false } = {}) {
   else info.textContent = 'Sem data: fica na lista “Sem data” até você definir um dia.';
   renderAttachments(t);
   taskDialog.showModal();
-  if (focusTitle) { f.title.focus(); f.title.select(); }
+  if (focusTitle || isNew) { f.title.focus(); f.title.select(); }
+}
+
+function openNewTask(prefill = {}) {
+  const email = prefill.assignee ? store.personEmail(prefill.assignee) : null;
+  openTask(null, { prefill: { ...prefill, assigneeEmail: email } });
 }
 
 taskForm.assignee.addEventListener('change', () => {
@@ -758,6 +862,11 @@ taskForm.assignee.addEventListener('change', () => {
 
 taskForm.addEventListener('submit', (e) => {
   e.preventDefault();
+  saveTaskForm();
+  taskDialog.close();
+});
+
+function saveTaskForm() {
   const f = taskForm;
   const rem = f.reminders.value;
   const assignee = f.assignee.value.trim() || null;
@@ -765,7 +874,7 @@ taskForm.addEventListener('submit', (e) => {
   let date = f.date.value || null;
   const time = f.time.value || null;
   if (time && !date) date = todayStr();
-  store.updateTask(state.editingId, {
+  const data = {
     title: f.title.value.trim() || 'Sem título',
     kind: f.kind.value,
     date,
@@ -778,11 +887,21 @@ taskForm.addEventListener('submit', (e) => {
     notes: f.notes.value.trim(),
     projectId: f.projectId.value || null,
     startDate: f.startDate.value && date && f.startDate.value < date ? f.startDate.value : null,
-  });
+  };
+  if (state.editingId) {
+    store.updateTask(state.editingId, data);
+  } else {
+    const created = store.createTask({ ...data, source: 'texto' });
+    state.editingId = created.id;
+    $('#toggleDoneBtn').hidden = false;
+    $('#taskDangerZone').hidden = false;
+    $('#taskDialogTitle').textContent = created.kind === 'compromisso' ? 'Compromisso' : 'Tarefa';
+    toast(`Criada: ${created.title}`);
+  }
   if (assignee && assigneeEmail) store.rememberPerson(assignee, assigneeEmail);
   sync.scheduleSync();
-  taskDialog.close();
-});
+  return store.getTask(state.editingId);
+}
 
 $('#toggleDoneBtn').addEventListener('click', () => {
   store.toggleDone(state.editingId);
@@ -805,7 +924,8 @@ $('#addPhoto').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file) return;
   const att = await makeAttachment(await compressImage(file), 'image');
-  const t = store.getTask(state.editingId);
+  // Tarefa nova: salva antes de anexar.
+  const t = state.editingId ? store.getTask(state.editingId) : saveTaskForm();
   const updated = store.updateTask(t.id, { attachments: [...(t.attachments || []), att] });
   sync.scheduleSync();
   renderAttachments(updated);
@@ -815,7 +935,8 @@ $('#recordAudio').addEventListener('click', async () => {
   const blob = await recordAudio();
   if (!blob) return;
   const att = await makeAttachment(blob, 'audio');
-  const t = store.getTask(state.editingId);
+  // Tarefa nova: salva antes de anexar.
+  const t = state.editingId ? store.getTask(state.editingId) : saveTaskForm();
   const updated = store.updateTask(t.id, { attachments: [...(t.attachments || []), att] });
   sync.scheduleSync();
   renderAttachments(updated);
@@ -831,6 +952,10 @@ function agendaClick(e) {
     if (nav === 'prev') state.agendaAnchor = week.shiftAnchor(anchor, agendaMode(), -1);
     if (nav === 'next') state.agendaAnchor = week.shiftAnchor(anchor, agendaMode(), 1);
     if (nav === 'late') { selectTab('tudo'); render(); window.scrollTo({ top: 0 }); return true; }
+    if (nav === 'new') { openNewAppointment(todayStr(), new Date().getHours() + 1); return true; }
+    if (nav === 'zoomin') { setHourHeight(hourH() * 1.25); return true; }
+    if (nav === 'zoomout') { setHourHeight(hourH() / 1.25); return true; }
+    if (nav === 'prev' || nav === 'next') { swipeAgenda(nav === 'next' ? 1 : -1); return true; }
     render();
     loadAgenda();
     return true;
@@ -840,33 +965,216 @@ function agendaClick(e) {
   const evId = e.target.closest('[data-event]')?.dataset.event;
   if (evId) {
     const ev = (state.agenda || []).find((x) => x.id === evId);
-    if (ev) {
-      const when = ev.start?.dateTime
-        ? `${new Date(ev.start.dateTime).toLocaleString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-        : 'dia todo';
-      toast(`${ev.summary || '(sem título)'} · ${when}${ev.htmlLink ? ' — toque para abrir no Google Agenda' : ''}`, {
-        ms: 5000,
-        action: ev.htmlLink ? () => window.open(ev.htmlLink, '_blank', 'noopener') : null,
-      });
-    }
+    if (ev) openEvent(ev);
     return true;
   }
   // Toque num horário vazio: começa uma tarefa naquele dia e hora (como no Google Agenda).
   const col = e.target.closest('.wk-col');
   if (col) {
     const y = e.clientY - col.getBoundingClientRect().top;
-    const h = Math.max(0, Math.min(23, Math.floor(y / week.HOUR_HEIGHT)));
-    const [, m, d] = col.dataset.day.split('-');
-    input.value = `${d}/${m} às ${h}h `;
-    updatePreview();
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
+    const h = Math.max(0, Math.min(23, Math.floor(y / hourH())));
+    openNewAppointment(col.dataset.day, h);
     return true;
   }
   return false;
 }
 
+// ---------- Compromissos do Google Agenda (abrir, criar, editar, excluir) ----------
+
+const eventDialog = $('#eventDialog');
+const eventForm = $('#eventForm');
+let editingEvent = null;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function toggleEventTimes() {
+  for (const el of $$('.ev-time', eventForm)) el.hidden = eventForm.allDay.checked;
+}
+eventForm.allDay.addEventListener('change', toggleEventTimes);
+
+async function fillCalendarSelect(selected) {
+  const sel = eventForm.calendarId;
+  const s = store.getSettings();
+  sel.innerHTML = `<option value="${esc(s.calendarId || 'primary')}">${esc(s.calendarName || 'Agenda principal')}</option>`;
+  sel.value = selected || s.calendarId || 'primary';
+  try {
+    const cals = await g.listCalendars();
+    sel.innerHTML = cals.map((c) => `<option value="${esc(c.primary ? 'primary' : c.id)}">${esc(c.name)}</option>`).join('');
+    sel.value = selected || s.calendarId || 'primary';
+  } catch { /* mantém a agenda padrão */ }
+}
+
+function openEvent(ev) {
+  editingEvent = ev;
+  const f = eventForm;
+  const allDay = !!ev.start?.date;
+  const s = allDay ? week.parseYmd(ev.start.date) : new Date(ev.start.dateTime);
+  const e = allDay ? null : new Date(ev.end?.dateTime || s.getTime() + 3_600_000);
+  f.summary.value = ev.summary || '';
+  f.allDay.checked = allDay;
+  f.date.value = allDay ? ev.start.date : week.ymd(s);
+  f.start.value = allDay ? '09:00' : `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
+  f.end.value = allDay ? '10:00' : `${pad2(e.getHours())}:${pad2(e.getMinutes())}`;
+  f.location.value = ev.location || '';
+  f.description.value = ev.description || '';
+  $('#eventCalendarField').hidden = true;
+  $('#eventDialogTitle').textContent = 'Compromisso';
+  $('#eventDangerZone').hidden = false;
+  const link = $('#eventOpenGoogle');
+  link.hidden = !ev.htmlLink;
+  if (ev.htmlLink) link.href = ev.htmlLink;
+  const notes = [];
+  if (ev.recurringEventId) notes.push('Compromisso que se repete: a alteração vale só para esta data.');
+  if (ev.organizer && !ev.organizer.self) notes.push(`Convite de ${ev.organizer.displayName || ev.organizer.email}: algumas alterações podem não ser permitidas pelo Google.`);
+  $('#eventInfo').textContent = notes.join(' ');
+  toggleEventTimes();
+  eventDialog.showModal();
+}
+
+function openNewAppointment(date, hour) {
+  // Sem Google conectado, o compromisso nasce como item do app.
+  if (!g.isConnected()) {
+    openNewTask({ kind: 'compromisso', date, time: `${pad2(Math.min(23, hour))}:00` });
+    return;
+  }
+  editingEvent = null;
+  const f = eventForm;
+  const h = Math.min(22, Math.max(0, hour));
+  f.summary.value = '';
+  f.allDay.checked = false;
+  f.date.value = date;
+  f.start.value = `${pad2(h)}:00`;
+  f.end.value = `${pad2(h + 1)}:00`;
+  f.location.value = '';
+  f.description.value = '';
+  $('#eventCalendarField').hidden = false;
+  fillCalendarSelect();
+  $('#eventDialogTitle').textContent = 'Novo compromisso';
+  $('#eventDangerZone').hidden = true;
+  $('#eventOpenGoogle').hidden = true;
+  $('#eventInfo').textContent = 'Será criado no seu Google Agenda.';
+  toggleEventTimes();
+  eventDialog.showModal();
+  f.summary.focus();
+}
+
+function eventBody() {
+  const f = eventForm;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const body = { summary: f.summary.value.trim() || '(sem título)', location: f.location.value.trim(), description: f.description.value };
+  if (f.allDay.checked) {
+    body.start = { date: f.date.value, dateTime: null, timeZone: null };
+    body.end = { date: week.addDays(f.date.value, 1), dateTime: null, timeZone: null };
+  } else {
+    const startT = f.start.value || '09:00';
+    let endT = f.end.value || startT;
+    if (endT <= startT) {
+      const [h, m] = startT.split(':').map(Number);
+      endT = `${pad2(Math.min(23, h + 1))}:${pad2(h >= 23 ? 59 : m)}`;
+    }
+    body.start = { dateTime: `${f.date.value}T${startT}:00`, timeZone: tz, date: null };
+    body.end = { dateTime: `${f.date.value}T${endT}:00`, timeZone: tz, date: null };
+  }
+  return body;
+}
+
+eventForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!g.hasValidToken()) {
+    toast('Conexão com o Google expirada: toque em qualquer lugar e tente de novo.');
+    return;
+  }
+  const btn = eventForm.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const body = eventBody();
+    if (editingEvent) {
+      await g.patchEvent(editingEvent.calendarId || 'primary', editingEvent.id, body);
+      toast('Compromisso atualizado.');
+    } else {
+      // Na criação, campos vazios (null) não são enviados.
+      const clean = JSON.parse(JSON.stringify(body, (k, v) => (v === null ? undefined : v)));
+      await g.insertEvent(eventForm.calendarId.value || 'primary', clean);
+      toast('Compromisso criado.');
+    }
+    eventDialog.close();
+    await loadAgenda(true);
+  } catch (err) {
+    toast(`Não foi possível salvar: ${err.message}`, { ms: 7000 });
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#eventDeleteBtn').addEventListener('click', async () => {
+  if (!editingEvent) return;
+  if (!(await ask(`Excluir “${editingEvent.summary || 'compromisso'}” do Google Agenda?`, 'Excluir'))) return;
+  try {
+    await g.deleteEvent(editingEvent.calendarId || 'primary', editingEvent.id);
+    eventDialog.close();
+    toast('Compromisso excluído.');
+    await loadAgenda(true);
+  } catch (err) {
+    toast(`Não foi possível excluir: ${err.message}`, { ms: 7000 });
+  }
+});
+
+// ---------- Nova tarefa / pessoas ----------
+
+const personDialog = $('#personDialog');
+const personForm = $('#personForm');
+let editingPerson = null;
+
+function openPerson(name = null) {
+  editingPerson = name;
+  personForm.name.value = name || '';
+  personForm.email.value = name ? store.personEmail(name) || '' : '';
+  $('#personDialogTitle').textContent = name ? 'Editar pessoa' : 'Nova pessoa';
+  personDialog.showModal();
+  personForm.name.focus();
+}
+
+personForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = personForm.name.value.trim();
+  const email = personForm.email.value.trim();
+  if (!name) return;
+  if (editingPerson && editingPerson !== name) {
+    // Renomear: atualiza as tarefas e a lista de pessoas.
+    for (const t of store.allTasks()) {
+      if (t.assignee === editingPerson) store.updateTask(t.id, { assignee: name }, { silent: true });
+    }
+    store.saveSettings({ people: store.getSettings().people.filter((p) => p.name !== editingPerson) });
+  }
+  store.rememberPerson(name, email);
+  for (const t of store.allTasks()) {
+    if (t.assignee === name && t.status !== 'feita' && email && t.assigneeEmail !== email) store.updateTask(t.id, { assigneeEmail: email }, { silent: true });
+  }
+  sync.scheduleSync();
+  personDialog.close();
+  render();
+  toast(editingPerson ? 'Pessoa atualizada.' : `${name} adicionada.`);
+});
+
+function listActions(e) {
+  const nt = e.target.closest('[data-new-task]');
+  if (nt) {
+    openNewTask({
+      assignee: nt.dataset.assignee || null,
+      projectId: nt.dataset.project || (state.view === 'projetos' ? state.projectId : null),
+    });
+    return true;
+  }
+  if (e.target.closest('[data-new-person]')) { openPerson(); return true; }
+  const ep = e.target.closest('[data-edit-person]');
+  if (ep) { openPerson(ep.dataset.editPerson); return true; }
+  return false;
+}
+
 $('#list').addEventListener('click', (e) => {
+  if (listActions(e)) return;
   if (state.view === 'painel' && dashboard.onClick(e)) return;
   if (state.view === 'agenda' && agendaClick(e)) return;
   const card = e.target.closest('.card[data-id]');

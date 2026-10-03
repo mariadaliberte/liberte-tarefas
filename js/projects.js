@@ -209,8 +209,9 @@ export function initProjects(deps) {
     if (tab === 'cronograma') {
       body = renderTimeline(p, store.projectTasks(p.id));
     } else if (tab === 'tarefas') {
-      body = group('Abertas', open) + group('Concluídas', done)
-        || '<div class="empty"><b>Nenhuma tarefa neste projeto</b>Escreva na barra de baixo: a tarefa entra direto aqui.<br>Ou gere tarefas a partir de uma anotação.</div>';
+      body = '<div class="list-actions"><button type="button" class="btn primary" data-new-task>+ Nova tarefa</button></div>'
+        + (group('Abertas', open) + group('Concluídas', done)
+        || '<div class="empty"><b>Nenhuma tarefa neste projeto</b>Escreva na barra de baixo: a tarefa entra direto aqui.<br>Ou gere tarefas a partir de uma anotação.</div>');
     } else {
       body = `<div class="row">
           <button type="button" class="btn primary" data-action="new-note">+ Nova anotação</button>

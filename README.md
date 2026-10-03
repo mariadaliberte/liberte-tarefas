@@ -23,7 +23,7 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
   - Concluiu? O evento ganha ✔ e os lembretes param. Excluiu? Sai da agenda.
 - **Responsável:** use `@Nome`. Se a pessoa tiver e-mail cadastrado em Ajustes → Pessoas, ela recebe convite na agenda.
 - **Prioridade:** Urgente, Alta, Normal, Baixa (lista ordenada automaticamente).
-- **Visões:** Tudo (Atrasadas, Hoje, Amanhã, Próximos 7 dias, Mais adiante, Sem data), Agenda (no formato do Google Agenda: grade de horários por Semana, 3 dias ou Dia, com seus compromissos do Google e as tarefas; toque num horário vazio para criar uma tarefa ali), Pessoas (o que está com cada um) e Feitas.
+- **Visões:** Tudo (Atrasadas, Hoje, Amanhã, Próximos 7 dias, Mais adiante, Sem data), Agenda (no formato do Google Agenda: grade de horários por Semana, 3 dias ou Dia, com seus compromissos do Google e as tarefas; toque num horário vazio para criar uma tarefa ali), Pessoas (o que está com cada um, com botões “+ Nova pessoa” e “+ Tarefa” por pessoa) e Feitas. Na Agenda, toque num compromisso do Google para editar ou excluir, num horário vazio (ou “+ Novo”) para criar; arraste para o lado para mudar de semana e use a pinça ou − / + para zoom.
 - **Tablet e celular sincronizados:** com a mesma conta Google conectada nos dois, o que você faz num aparece no outro em segundos (tarefas, projetos, anotações, pessoas, ajustes e o modelo da sua folha).
 - **Conexão com o Google:** o Google dá acesso por 1 hora a apps sem servidor; o app renova sozinho no seu próximo toque na tela, até as 18h. Depois das 18h, um toque reconecta.
 - **Data de criação automática:** cada tarefa mostra quando foi criada (e como: digitada, por voz, foto ou caderno). Tarefas paradas há 7 dias ou mais ganham o aviso “há N dias”. A data também vai na descrição do evento no Google Agenda.
@@ -39,6 +39,7 @@ App de tarefas e compromissos integrado ao Google Agenda. Funciona no celular (i
   - As tarefas de projeto também aparecem nas listas gerais (Tudo, Agenda, Pessoas) com a etiqueta do projeto; o filtro “Todo projeto” mostra só as de um projeto.
   - No Caderno, escolha em “Salvar em” se o que você escreveu ou desenhou vira tarefa solta, tarefa de um projeto ou anotação de um projeto.
 - **Tablet e computador:** menu fixo na lateral esquerda (a partir de 768px de largura, inclusive tablet em pé).
+- **Só a caneta escreve** no Desenhar e em Minha folha: os dedos movem a folha e dão zoom (pinça ou botões − / +), então a mão apoiada não risca. Para usar o dedo (ex.: no celular), marque “Desenhar com o dedo”.
 - **Caneta, marca-texto e borracha:** 6 cores de caneta e 5 de marca-texto no modo Desenhar e em Minha folha.
 - **Revisão diária:** em Ajustes, cria um lembrete recorrente (seg a sex) para revisar as tarefas sem data.
 - **Nada se perde:** tudo é salvo no aparelho na hora, inclusive sem internet, e copiado para o seu Google Drive (pasta oculta do app + pasta “Liberte Tarefas - Anexos” para fotos e áudios). Abre no celular e no computador com os mesmos dados.

@@ -198,7 +198,10 @@ export async function fetchAgenda(fromDate, toDate) {
   const end = new Date(y2, m2 - 1, d2);
   const ids = [...new Set(['primary', settings.calendarId || 'primary'])];
   if (!g.hasValidToken()) return null;
-  const lists = await Promise.all(ids.map((id) => g.listEvents(id, start, end).catch(() => [])));
+  // Cada evento guarda de qual agenda veio (para editar/excluir no lugar certo).
+  const lists = await Promise.all(ids.map((id) => g.listEvents(id, start, end)
+    .then((items) => items.map((ev) => ({ ...ev, calendarId: id })))
+    .catch(() => [])));
   const seen = new Set();
   return lists.flat().filter((ev) => {
     if (ev.status === 'cancelled' || ev.extendedProperties?.private?.ltTaskId) return false;
